@@ -1,484 +1,712 @@
-﻿import React, { createContext, useContext, useMemo, useState, ReactNode } from "react";
+import React, { createContext, ReactNode, useContext, useMemo, useState } from "react";
 
-export type Role = "LEAGUE_ADMIN" | "TOURNAMENT_ADMIN" | "TEAM_REP" | "REFEREE" | "FAN";
+/** ===== Types ===== */
+export type Role =
+  | "LEAGUE_ADMIN"
+  | "TOURNAMENT_ADMIN"
+  | "TEAM_REP"
+  | "REFEREE"
+  | "FAN";
 
-export type CurrentUser = {
-  id: string;
-  name: string;
-  role: Role;
-  teamId?: string; // required for TEAM_REP role
-};
+export type Plan = "Free" | "Pro";
+
+export type LogoKey =
+  | "nvt"
+  | "spartan"
+  | "lanham"
+  | "elite"
+  | "balisao"
+  | "nova"
+  | "delaware-progressives"
+  | "vfc"
+  | "social-boyz"
+  | "bvfc"
+  | "zoo-zoo"
+  | "nevt"
+  | "delaware-vets"
+  | "nj-ndamba"
+  | "landover"
+  | "placeholder";
 
 export type League = {
   id: string;
   name: string;
-  region?: string;
-  plan: "Free" | "Pro";
-  active: boolean;
+  plan: Plan;
 };
 
 export type Tournament = {
   id: string;
   leagueId: string;
   name: string;
-  organizer: string;
-  city: string;
-  ageBand: "Open" | "O30" | "O35" | "O40" | "U21";
-  status: "Open" | "Locked" | "Live" | "Completed";
-  rosterLocked: boolean;
+  location?: string;
+  fee?: number;
 };
 
 export type Team = {
   id: string;
   leagueId: string;
-  tournamentId: string;
+  tournamentId?: string;
   name: string;
-  repName: string;
+  repName?: string;
+  logoKey?: LogoKey;
 };
 
 export type Player = {
   id: string;
-  leagueId: string;
-  tournamentId: string;
   teamId: string;
   fullName: string;
-  dob: string; // YYYY-MM-DD
-  verified: boolean;
-  verificationNote?: string;
-  createdAt: string;
+  dob?: string; // YYYY-MM-DD
+  shirtNumber?: string;
+  position?: string;
+  verified?: boolean;
 };
 
-export type TransferLog = {
-  id: string;
-  leagueId: string;
-  tournamentId: string;
-  playerId: string;
-  fromTeamId: string;
-  toTeamId: string;
-  by: string;
-  createdAt: string;
-};
-
-export type MatchEvent =
-  | { id: string; type: "GOAL"; minute: number; teamId: string; playerName: string }
-  | { id: string; type: "YELLOW"; minute: number; teamId: string; playerName: string }
-  | { id: string; type: "RED"; minute: number; teamId: string; playerName: string };
+export type MatchStatus = "SCHEDULED" | "LIVE" | "FINAL";
 
 export type Match = {
   id: string;
   leagueId: string;
-  tournamentId: string;
+  tournamentId?: string;
   homeTeamId: string;
   awayTeamId: string;
-  status: "Upcoming" | "Live" | "FT";
-  clockSeconds: number;
-  durationSeconds: number;
-  events: MatchEvent[];
+  kickoffAt?: number; // epoch ms
+  status: MatchStatus;
+  clockSec?: number;
 };
 
-export type Announcement = {
-  id: string;
-  leagueId: string;
-  tournamentId: string;
-  title: string;
-  body: string;
-};
+export type LiveEventType = "GOAL" | "YELLOW" | "RED";
 
-export type TeamMessage = {
+export type LoggedEvent = {
   id: string;
-  leagueId: string;
+  matchId: string;
+  type: LiveEventType;
   teamId: string;
-  sender: string;
-  body: string;
-  createdAt: string;
+  playerId?: string;
+  atSec: number;
+  createdAt: number;
 };
 
-export type Ad = {
+export type Message = {
   id: string;
+  type: "TEAM";
+  teamId: string;
+  senderName: string;
+  body: string;
+  createdAt: number;
+};
+
+export type PaymentType =
+  | "BUY_CARD"
+  | "PAY_FINE"
+  | "TOURNAMENT_REGISTRATION"
+  | "SUBSCRIPTION"
+  | "SPONSOR_AD_VENDOR";
+
+export type Payment = {
+  id: string;
+  type: PaymentType;
+  amount: number;
+  currency: "USD";
+  status: "PENDING" | "PAID" | "FAILED";
+  createdAt: number;
+
+  // metadata
   leagueId?: string;
   tournamentId?: string;
-  title: string;
-  subtitle?: string;
+  teamId?: string;
+  playerId?: string;
+  note?: string;
 };
 
-const uid = () => Math.random().toString(36).slice(2, 10);
+/** ===== Helpers ===== */
+function uid(prefix = "id") {
+  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+}
 
-// --- AGE HELPERS ---
-export function calcAge(dobYYYYMMDD: string, asOf: Date = new Date()) {
-  const [y, m, d] = dobYYYYMMDD.split("-").map((x) => Number(x));
-  if (!y || !m || !d) return null;
-  const dob = new Date(y, m - 1, d);
-  if (Number.isNaN(dob.getTime())) return null;
-
-  let age = asOf.getFullYear() - dob.getFullYear();
-  const hasHadBirthday =
-    asOf.getMonth() > dob.getMonth() || (asOf.getMonth() === dob.getMonth() && asOf.getDate() >= dob.getDate());
-  if (!hasHadBirthday) age -= 1;
+export function calcAge(dob?: string): number | null {
+  if (!dob) return null;
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
   return age;
 }
 
-export function ageBannerStyle(age: number) {
-  if (age < 30) return { bg: "#FF3B30", fg: "#061A2B", label: "U30" };
-  if (age <= 34) return { bg: "#F2D100", fg: "#061A2B", label: "30-34" };
-  return { bg: "#34C759", fg: "#061A2B", label: "35+" };
-}
-
-export function isEligible(age: number, band: Tournament["ageBand"]) {
-  if (band === "Open") return true;
-  if (band === "O30") return age >= 30;
-  if (band === "O35") return age >= 35;
-  if (band === "O40") return age >= 40;
-  if (band === "U21") return age <= 21;
-  return true;
-}
-
-// --- PERMISSIONS (MVP) ---
-type Permission =
-  | "CREATE_TOURNAMENT"
-  | "ADD_TEAM"
-  | "ADD_PLAYER"
-  | "VERIFY_PLAYER"
-  | "TRANSFER_PLAYER"
-  | "ROSTER_LOCK"
-  | "VIEW_ADMIN";
-
-function can(user: CurrentUser, league: League | undefined, perm: Permission, ctx?: { teamId?: string }) {
-  const isPro = league?.plan === "Pro";
-
-  const isAdmin = user.role === "LEAGUE_ADMIN" || user.role === "TOURNAMENT_ADMIN";
-  const isTeamRep = user.role === "TEAM_REP";
-  const isRef = user.role === "REFEREE";
-
-  switch (perm) {
-    case "CREATE_TOURNAMENT":
-    case "ADD_TEAM":
-      return isAdmin;
-
-    case "ADD_PLAYER":
-      if (isAdmin) return true;
-      if (isTeamRep) return !!ctx?.teamId && ctx.teamId === user.teamId;
-      return false;
-
-    case "VERIFY_PLAYER":
-      // only admins (refs could be allowed later if you want)
-      return isAdmin;
-
-    case "TRANSFER_PLAYER":
-      // Pro feature + admin only (keeps rosters clean)
-      return isPro && isAdmin;
-
-    case "ROSTER_LOCK":
-      // Pro feature + admin only
-      return isPro && isAdmin;
-
-    case "VIEW_ADMIN":
-      return isAdmin || isRef;
-
-    default:
-      return false;
+/** Age banner (U30 red, 30-34 yellow, 35+ green) */
+export function ageBannerStyle(age: number | null) {
+  if (age === null) {
+    return { bg: "rgba(255,255,255,0.10)", text: "#EAF2FF", label: "AGE ?" };
   }
+  if (age < 30) return { bg: "#D7263D", text: "#FFFFFF", label: "U30" };
+  if (age <= 34) return { bg: "#F2D100", text: "#061A2B", label: "30–34" };
+  return { bg: "#2ECC71", text: "#061A2B", label: "35+" };
 }
 
-const seed = {
-  leagues: [
-    { id: "l1", name: "DMV League", region: "DMV", plan: "Pro", active: true },
-    { id: "l2", name: "NEVT", region: "NJ/NE", plan: "Free", active: true },
-    { id: "l3", name: "NVT USA", region: "National", plan: "Pro", active: true },
-  ] as League[],
-  tournaments: [
-    { id: "t1", leagueId: "l1", name: "DMV League Winter Cup", organizer: "DMV League", city: "Baltimore, MD", ageBand: "O35", status: "Open", rosterLocked: false },
-    { id: "t2", leagueId: "l2", name: "NEVT Invitational (Free)", organizer: "NEVT", city: "Newark, NJ", ageBand: "O30", status: "Open", rosterLocked: false },
-  ] as Tournament[],
-  teams: [
-    { id: "team1", leagueId: "l1", tournamentId: "t1", name: "Baltimore Veterans", repName: "Andy" },
-    { id: "team2", leagueId: "l1", tournamentId: "t1", name: "Spartan Vets", repName: "Coach" },
-  ] as Team[],
-  players: [
-    { id: "p1", leagueId: "l1", tournamentId: "t1", teamId: "team1", fullName: "Sample Player A", dob: "1990-06-10", verified: true, verificationNote: "ID checked", createdAt: new Date().toISOString() },
-    { id: "p2", leagueId: "l1", tournamentId: "t1", teamId: "team1", fullName: "Sample Player B", dob: "1998-02-03", verified: false, createdAt: new Date().toISOString() },
-  ] as Player[],
-  transferLogs: [] as TransferLog[],
-  matches: [
-    {
-      id: "m1",
-      leagueId: "l1",
-      tournamentId: "t1",
-      homeTeamId: "team1",
-      awayTeamId: "team2",
-      status: "Live",
-      clockSeconds: 12 * 60,
-      durationSeconds: 50 * 60,
-      events: [
-        { id: "e1", type: "GOAL", minute: 9, teamId: "team1", playerName: "Big Boy" },
-        { id: "e2", type: "YELLOW", minute: 11, teamId: "team2", playerName: "Player 7" },
-      ],
-    },
-  ] as Match[],
-  announcements: [
-    { id: "a1", leagueId: "l1", tournamentId: "t1", title: "Roster Lock Reminder", body: "Ensure all players are verified before roster lock." },
-  ] as Announcement[],
-  messages: [
-    { id: "msg1", leagueId: "l1", teamId: "team1", sender: "Team Rep", body: "Arrive 45 mins early. Bring indoor shoes.", createdAt: new Date().toISOString() },
-  ] as TeamMessage[],
-  ads: [
-    { id: "ad1", leagueId: "l1", tournamentId: "t1", title: "Sponsor: ShopLushh", subtitle: "Event carpets  Rentals available" },
-    { id: "ad2", leagueId: "l1", tournamentId: "t1", title: "Vendor: Jersey Printing", subtitle: "Same-day names & numbers" },
-    { id: "ad3", leagueId: "l3", title: "NVT USA", subtitle: "Labor Day Tournament  Verified Rosters" },
-  ] as Ad[],
-};
+/** Permissions helper */
+type Action =
+  | "VIEW_TEAM_ROSTER"
+  | "EDIT_TEAM_ROSTER"
+  | "INVITE_PLAYER"
+  | "REMOVE_PLAYER"
+  | "CREATE_TEAM"
+  | "CREATE_TOURNAMENT"
+  | "LOG_LIVE_EVENT"
+  | "MANAGE_PAYMENTS";
 
-type Store = {
-  currentUser: CurrentUser;
+function canByRole(role: Role, action: Action) {
+  if (role === "LEAGUE_ADMIN") return true;
+
+  if (role === "TOURNAMENT_ADMIN") {
+    return (
+      action === "VIEW_TEAM_ROSTER" ||
+      action === "CREATE_TOURNAMENT" ||
+      action === "MANAGE_PAYMENTS"
+    );
+  }
+
+  if (role === "TEAM_REP") {
+    return (
+      action === "VIEW_TEAM_ROSTER" ||
+      action === "EDIT_TEAM_ROSTER" ||
+      action === "INVITE_PLAYER" ||
+      action === "REMOVE_PLAYER"
+    );
+  }
+
+  if (role === "REFEREE") {
+    return action === "VIEW_TEAM_ROSTER" || action === "LOG_LIVE_EVENT";
+  }
+
+  // FAN
+  return action === "VIEW_TEAM_ROSTER";
+}
+
+/** ===== Store shape ===== */
+export type AppStore = {
+  // user / role / league
+  currentUser: { id: string; name: string; role: Role; teamId?: string };
   setRole: (role: Role) => void;
-  setTeamForRep: (teamId?: string) => void;
 
   leagues: League[];
   activeLeagueId: string;
   setActiveLeague: (leagueId: string) => void;
-  activeLeague: League | undefined;
 
+  // core data
   tournaments: Tournament[];
   teams: Team[];
   players: Player[];
-  transferLogs: TransferLog[];
-
   matches: Match[];
-  announcements: Announcement[];
-  messages: TeamMessage[];
-  ads: Ad[];
+  loggedEvents: LoggedEvent[];
+  messages: Message[];
 
-  can: (perm: Permission, ctx?: { teamId?: string }) => boolean;
+  // permissions
+  can: (action: Action, ctx?: { teamId?: string }) => boolean;
+  setTeamForRep: (teamId?: string) => void;
 
-  createTournament: (input: { leagueId: string; name: string; organizer: string; city: string; ageBand?: Tournament["ageBand"] }) => { ok: boolean; reason?: string };
-  addTeam: (input: { leagueId: string; tournamentId: string; name: string; repName: string }) => { ok: boolean; reason?: string };
+  // teams / roster
+  createTeam: (payload: {
+    leagueId: string;
+    name: string;
+    repName?: string;
+    tournamentId?: string;
+    logoKey?: LogoKey;
+  }) => string;
 
-  addPlayer: (input: { leagueId: string; tournamentId: string; teamId: string; fullName: string; dob: string }) => { ok: boolean; reason?: string };
+  addPlayer: (payload: {
+    teamId: string;
+    fullName: string;
+    dob?: string;
+    shirtNumber?: string;
+    position?: string;
+  }) => string;
 
-  toggleVerifyPlayer: (playerId: string) => { ok: boolean; reason?: string };
-  toggleRosterLock: (tournamentId: string) => { ok: boolean; reason?: string };
-  transferPlayer: (input: { playerId: string; toTeamId: string; by?: string }) => { ok: boolean; reason?: string };
+  removePlayer: (playerId: string) => void;
 
-  tickMatch: (matchId: string) => void;
-  addEvent: (input: { matchId: string; type: MatchEvent["type"]; teamId: string; playerName: string; minute: number }) => void;
+  invitePlayer: (payload: { teamId: string; fullName: string; note?: string }) => void;
 
-  sendTeamMessage: (input: { leagueId: string; teamId: string; sender: string; body: string }) => void;
+  // live logging
+  logEvent: (payload: {
+    matchId: string;
+    type: LiveEventType;
+    teamId: string;
+    playerId?: string;
+    atSec: number;
+  }) => void;
+
+  setMatchStatus: (matchId: string, status: MatchStatus) => void;
+  tickMatchClock: (matchId: string, nextSec: number) => void;
+
+  // chat
+  sendTeamMessage: (payload: { teamId: string; body: string; senderName?: string }) => void;
+
+  // payments (demo stubs)
+  payments: Payment[];
+  createPayment: (p: Omit<Payment, "id" | "createdAt" | "status" | "currency"> & { status?: Payment["status"] }) => string;
+  markPaymentPaid: (paymentId: string) => void;
+
+  // convenience demo actions
+  payFine: (payload: { leagueId: string; teamId?: string; playerId?: string; amount: number; note?: string }) => string;
+  buyCard: (payload: { leagueId: string; playerId: string; amount: number; note?: string }) => string;
+  registerTournament: (payload: { tournamentId: string; teamId: string; amount: number; note?: string }) => string;
+  subscribeLeague: (payload: { leagueId: string; amount: number; note?: string }) => string;
+  sponsorPayment: (payload: { leagueId: string; amount: number; note?: string }) => string;
 };
 
-const Ctx = createContext<Store | null>(null);
+const AppStoreContext = createContext<AppStore | null>(null);
 
+export function useAppStore(): AppStore {
+  const ctx = useContext(AppStoreContext);
+  if (!ctx) throw new Error("useAppStore must be used within AppStoreProvider");
+  return ctx;
+}
+
+/** ===== Provider ===== */
 export function AppStoreProvider({ children }: { children: ReactNode }) {
-  // Demo user (well switch roles from Profile tab)
-  const [currentUser, setCurrentUser] = useState<CurrentUser>({
-    id: "u1",
-    name: "Andy",
+  // demo leagues
+  const [leagues] = useState<League[]>([
+    { id: "league_nvt", name: "NVT League", plan: "Pro" },
+    { id: "league_demo", name: "Demo League", plan: "Free" },
+  ]);
+
+  const [activeLeagueId, setActiveLeagueId] = useState<string>("league_nvt");
+
+  const [currentUser, setCurrentUser] = useState<AppStore["currentUser"]>({
+    id: "user_1",
+    name: "Demo User",
     role: "LEAGUE_ADMIN",
+    teamId: undefined, // used when TEAM_REP
   });
 
-  const [leagues] = useState<League[]>(seed.leagues);
-  const [activeLeagueId, setActiveLeagueId] = useState<string>(seed.leagues[0]?.id ?? "l1");
+  // tournaments
+  const [tournaments, setTournaments] = useState<Tournament[]>([
+    {
+      id: "t_nvt_2026",
+      leagueId: "league_nvt",
+      name: "NVT Winter Classic",
+      location: "Maryland",
+      fee: 250,
+    },
+  ]);
 
-  const [tournaments, setTournaments] = useState<Tournament[]>(seed.tournaments);
-  const [teams, setTeams] = useState<Team[]>(seed.teams);
-  const [players, setPlayers] = useState<Player[]>(seed.players);
-  const [transferLogs, setTransferLogs] = useState<TransferLog[]>(seed.transferLogs);
+  // teams (seed with your list + logo keys)
+  const [teams, setTeams] = useState<Team[]>([
+    {
+      id: "team_spartan",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Spartan Veterans FC",
+      repName: "Coach",
+      logoKey: "spartan",
+    },
+    {
+      id: "team_lanham",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Lanham Veteran FC",
+      repName: "Coach",
+      logoKey: "lanham",
+    },
+    {
+      id: "team_elite",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Elite Veterans FC",
+      repName: "Coach",
+      logoKey: "elite",
+    },
+    {
+      id: "team_balisao",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Balisao Veterans Club",
+      repName: "Coach",
+      logoKey: "balisao",
+    },
+    {
+      id: "team_nova",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Nova Vets",
+      repName: "Coach",
+      logoKey: "nova",
+    },
+    {
+      id: "team_de_prog",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Delaware Progressives",
+      repName: "Coach",
+      logoKey: "delaware-progressives",
+    },
+    {
+      id: "team_vfc",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Veterans Football Club",
+      repName: "Coach",
+      logoKey: "vfc",
+    },
+    {
+      id: "team_social",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Social Boyz",
+      repName: "Coach",
+      logoKey: "social-boyz",
+    },
+    {
+      id: "team_bvfc",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Baltimore Veteran FC",
+      repName: "Andy",
+      logoKey: "bvfc",
+    },
+    {
+      id: "team_zoo",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Zoo Zoo",
+      repName: "Coach",
+      logoKey: "zoo-zoo",
+    },
+    {
+      id: "team_nevt",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "New England Veterans FC",
+      repName: "Coach",
+      logoKey: "nevt",
+    },
+    {
+      id: "team_de_vets",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Delaware Veterans Club",
+      repName: "Coach",
+      logoKey: "delaware-vets",
+    },
+    {
+      id: "team_nj_ndamba",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "NJ Ndamba Veterans FC",
+      repName: "Coach",
+      logoKey: "nj-ndamba",
+    },
+    {
+      id: "team_landover",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      name: "Landover FC",
+      repName: "Coach",
+      logoKey: "landover",
+    },
 
-  const [matches, setMatches] = useState<Match[]>(seed.matches);
-  const [announcements] = useState<Announcement[]>(seed.announcements);
-  const [messages, setMessages] = useState<TeamMessage[]>(seed.messages);
-  const [ads] = useState<Ad[]>(seed.ads);
+    // Example team in demo/free league
+    {
+      id: "team_demo_1",
+      leagueId: "league_demo",
+      name: "Demo FC",
+      repName: "Rep",
+      logoKey: "placeholder",
+    },
+  ]);
 
-  const activeLeague = useMemo(() => leagues.find((l) => l.id === activeLeagueId), [leagues, activeLeagueId]);
-  const setActiveLeague: Store["setActiveLeague"] = (leagueId) => setActiveLeagueId(leagueId);
+  const [players, setPlayers] = useState<Player[]>([
+    // seed a few demo players on BVFC so age banners show
+    { id: "p1", teamId: "team_bvfc", fullName: "Player One", dob: "1990-01-01", shirtNumber: "9", position: "ST", verified: true },
+    { id: "p2", teamId: "team_bvfc", fullName: "Player Two", dob: "1998-05-10", shirtNumber: "7", position: "RW", verified: false },
+    { id: "p3", teamId: "team_bvfc", fullName: "Player Three", dob: "1986-03-22", shirtNumber: "4", position: "CB", verified: true },
+  ]);
 
-  const setRole: Store["setRole"] = (role) => {
-    setCurrentUser((u) => ({
-      ...u,
-      role,
-      teamId: role === "TEAM_REP" ? u.teamId : undefined,
-    }));
+  const [matches, setMatches] = useState<Match[]>([
+    {
+      id: "m1",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      homeTeamId: "team_bvfc",
+      awayTeamId: "team_spartan",
+      status: "SCHEDULED",
+      kickoffAt: Date.now() + 1000 * 60 * 60 * 24,
+      clockSec: 0,
+    },
+    {
+      id: "m2",
+      leagueId: "league_nvt",
+      tournamentId: "t_nvt_2026",
+      homeTeamId: "team_lanham",
+      awayTeamId: "team_elite",
+      status: "LIVE",
+      kickoffAt: Date.now() - 1000 * 60 * 10,
+      clockSec: 10 * 60,
+    },
+  ]);
+
+  const [loggedEvents, setLoggedEvents] = useState<LoggedEvent[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+
+  /** ===== Actions ===== */
+  const setRole = (role: Role) => {
+    setCurrentUser((u) => ({ ...u, role }));
   };
 
-  const setTeamForRep: Store["setTeamForRep"] = (teamId) => {
+  const setActiveLeague = (leagueId: string) => {
+    setActiveLeagueId(leagueId);
+  };
+
+  const setTeamForRep = (teamId?: string) => {
     setCurrentUser((u) => ({ ...u, teamId }));
   };
 
-  const canWrap: Store["can"] = (perm, ctx) => can(currentUser, activeLeague, perm, ctx);
+  const can = (action: Action, ctx?: { teamId?: string }) => {
+    const allowed = canByRole(currentUser.role, action);
+    if (!allowed) return false;
 
-  const createTournament: Store["createTournament"] = ({ leagueId, name, organizer, city, ageBand }) => {
-    if (!canWrap("CREATE_TOURNAMENT")) return { ok: false, reason: "Not allowed" };
+    // If TEAM_REP is trying to edit a roster, lock it to their team
+    if (currentUser.role === "TEAM_REP") {
+      const t = ctx?.teamId;
+      if (
+        action === "EDIT_TEAM_ROSTER" ||
+        action === "INVITE_PLAYER" ||
+        action === "REMOVE_PLAYER"
+      ) {
+        if (!t) return false;
+        return currentUser.teamId === t;
+      }
+    }
 
-    const league = leagues.find((l) => l.id === leagueId);
-    const isPro = league?.plan === "Pro";
+    return true;
+  };
 
-    // Free plan: limit to 1 tournament (MVP gating)
-    const existing = tournaments.filter((t) => t.leagueId === leagueId).length;
-    if (!isPro && existing >= 1) return { ok: false, reason: "Free plan: tournament limit reached. Upgrade to Pro." };
-
-    const t: Tournament = {
-      id: uid(),
-      leagueId,
-      name: name.trim() || "New Tournament",
-      organizer: organizer.trim() || "Organizer",
-      city: city.trim() || "City",
-      ageBand: ageBand ?? "O35",
-      status: "Open",
-      rosterLocked: false,
+  const createTeam: AppStore["createTeam"] = (payload) => {
+    if (!can("CREATE_TEAM")) return "";
+    const id = uid("team");
+    const next: Team = {
+      id,
+      leagueId: payload.leagueId,
+      name: payload.name,
+      repName: payload.repName,
+      tournamentId: payload.tournamentId,
+      logoKey: payload.logoKey ?? "placeholder",
     };
-    setTournaments((prev) => [t, ...prev]);
-    return { ok: true };
+    setTeams((prev) => [next, ...prev]);
+    return id;
   };
 
-  const addTeam: Store["addTeam"] = ({ leagueId, tournamentId, name, repName }) => {
-    if (!canWrap("ADD_TEAM")) return { ok: false, reason: "Not allowed" };
-    const team: Team = { id: uid(), leagueId, tournamentId, name: name.trim() || "New Team", repName: repName.trim() || "Rep" };
-    setTeams((prev) => [team, ...prev]);
-    return { ok: true };
+  const addPlayer: AppStore["addPlayer"] = (payload) => {
+    if (!can("EDIT_TEAM_ROSTER", { teamId: payload.teamId })) return "";
+    const id = uid("player");
+    const next: Player = {
+      id,
+      teamId: payload.teamId,
+      fullName: payload.fullName,
+      dob: payload.dob,
+      shirtNumber: payload.shirtNumber,
+      position: payload.position,
+      verified: false,
+    };
+    setPlayers((p) => [next, ...p]);
+    return id;
   };
 
-  const addPlayer: Store["addPlayer"] = ({ leagueId, tournamentId, teamId, fullName, dob }) => {
-    if (!canWrap("ADD_PLAYER", { teamId })) return { ok: false, reason: "Not allowed (role/team permission)." };
+  const removePlayer: AppStore["removePlayer"] = (playerId) => {
+    const player = players.find((p) => p.id === playerId);
+    if (!player) return;
+    if (!can("REMOVE_PLAYER", { teamId: player.teamId })) return;
+    setPlayers((prev) => prev.filter((p) => p.id !== playerId));
+  };
 
-    const tournament = tournaments.find((t) => t.id === tournamentId);
-    if (!tournament) return { ok: false, reason: "Tournament not found" };
-    if (tournament.rosterLocked) return { ok: false, reason: "Roster is locked for this tournament." };
+  const invitePlayer: AppStore["invitePlayer"] = ({ teamId, fullName, note }) => {
+    if (!can("INVITE_PLAYER", { teamId })) return;
+    // demo: post as a team message so stakeholders can see “invite activity”
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: uid("msg"),
+        type: "TEAM",
+        teamId,
+        senderName: currentUser.name,
+        body: `INVITE SENT: ${fullName}${note ? ` (${note})` : ""}`,
+        createdAt: Date.now(),
+      },
+    ]);
+  };
 
-    const age = calcAge(dob);
-    if (age === null) return { ok: false, reason: "Invalid DOB. Use YYYY-MM-DD." };
-    if (!isEligible(age, tournament.ageBand)) return { ok: false, reason: `Not eligible for ${tournament.ageBand}. Player age: ${age}.` };
+  const logEvent: AppStore["logEvent"] = ({ matchId, type, teamId, playerId, atSec }) => {
+    if (!can("LOG_LIVE_EVENT")) return;
+    const e: LoggedEvent = {
+      id: uid("evt"),
+      matchId,
+      type,
+      teamId,
+      playerId,
+      atSec,
+      createdAt: Date.now(),
+    };
+    setLoggedEvents((prev) => [e, ...prev]);
+  };
 
-    const p: Player = {
-      id: uid(),
+  const setMatchStatus: AppStore["setMatchStatus"] = (matchId, status) => {
+    setMatches((prev) => prev.map((m) => (m.id === matchId ? { ...m, status } : m)));
+  };
+
+  const tickMatchClock: AppStore["tickMatchClock"] = (matchId, nextSec) => {
+    setMatches((prev) => prev.map((m) => (m.id === matchId ? { ...m, clockSec: nextSec } : m)));
+  };
+
+  const sendTeamMessage: AppStore["sendTeamMessage"] = ({ teamId, body, senderName }) => {
+    const text = String(body ?? "").trim();
+    if (!text) return;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: uid("msg"),
+        type: "TEAM",
+        teamId,
+        senderName: senderName ?? currentUser.name,
+        body: text,
+        createdAt: Date.now(),
+      },
+    ]);
+  };
+
+  /** Payments (demo stubs) */
+  const createPayment: AppStore["createPayment"] = (p) => {
+    const id = uid("pay");
+    const next: Payment = {
+      id,
+      type: p.type,
+      amount: p.amount,
+      currency: "USD",
+      status: p.status ?? "PENDING",
+      createdAt: Date.now(),
+      leagueId: p.leagueId,
+      tournamentId: p.tournamentId,
+      teamId: p.teamId,
+      playerId: p.playerId,
+      note: p.note,
+    };
+    setPayments((prev) => [next, ...prev]);
+    return id;
+  };
+
+  const markPaymentPaid: AppStore["markPaymentPaid"] = (paymentId) => {
+    setPayments((prev) =>
+      prev.map((p) => (p.id === paymentId ? { ...p, status: "PAID" } : p))
+    );
+  };
+
+  const payFine: AppStore["payFine"] = ({ leagueId, teamId, playerId, amount, note }) => {
+    return createPayment({
+      type: "PAY_FINE",
       leagueId,
+      teamId,
+      playerId,
+      amount,
+      note,
+      status: "PAID",
+    });
+  };
+
+  const buyCard: AppStore["buyCard"] = ({ leagueId, playerId, amount, note }) => {
+    return createPayment({
+      type: "BUY_CARD",
+      leagueId,
+      playerId,
+      amount,
+      note,
+      status: "PAID",
+    });
+  };
+
+  const registerTournament: AppStore["registerTournament"] = ({ tournamentId, teamId, amount, note }) => {
+    const t = tournaments.find((x) => x.id === tournamentId);
+    return createPayment({
+      type: "TOURNAMENT_REGISTRATION",
+      leagueId: t?.leagueId,
       tournamentId,
       teamId,
-      fullName: fullName.trim() || "Player",
-      dob,
-      verified: false,
-      createdAt: new Date().toISOString(),
-    };
-    setPlayers((prev) => [p, ...prev]);
-    return { ok: true };
+      amount,
+      note,
+      status: "PAID",
+    });
   };
 
-  const toggleVerifyPlayer: Store["toggleVerifyPlayer"] = (playerId) => {
-    if (!canWrap("VERIFY_PLAYER")) return { ok: false, reason: "Admins only" };
-    setPlayers((prev) =>
-      prev.map((p) =>
-        p.id === playerId
-          ? { ...p, verified: !p.verified, verificationNote: !p.verified ? `Verified by ${currentUser.name}` : undefined }
-          : p
-      )
-    );
-    return { ok: true };
+  const subscribeLeague: AppStore["subscribeLeague"] = ({ leagueId, amount, note }) => {
+    return createPayment({
+      type: "SUBSCRIPTION",
+      leagueId,
+      amount,
+      note,
+      status: "PAID",
+    });
   };
 
-  const toggleRosterLock: Store["toggleRosterLock"] = (tournamentId) => {
-    if (!canWrap("ROSTER_LOCK")) return { ok: false, reason: "Pro + Admin required" };
-    setTournaments((prev) =>
-      prev.map((t) =>
-        t.id === tournamentId
-          ? { ...t, rosterLocked: !t.rosterLocked, status: !t.rosterLocked ? "Locked" : "Open" }
-          : t
-      )
-    );
-    return { ok: true };
+  const sponsorPayment: AppStore["sponsorPayment"] = ({ leagueId, amount, note }) => {
+    return createPayment({
+      type: "SPONSOR_AD_VENDOR",
+      leagueId,
+      amount,
+      note,
+      status: "PAID",
+    });
   };
 
-  const transferPlayer: Store["transferPlayer"] = ({ playerId, toTeamId, by }) => {
-    if (!canWrap("TRANSFER_PLAYER")) return { ok: false, reason: "Pro + Admin required" };
-
-    const player = players.find((p) => p.id === playerId);
-    if (!player) return { ok: false, reason: "Player not found" };
-
-    const tournament = tournaments.find((t) => t.id === player.tournamentId);
-    if (!tournament) return { ok: false, reason: "Tournament not found" };
-    if (tournament.rosterLocked) return { ok: false, reason: "Roster is locked. Transfers are disabled." };
-
-    const toTeam = teams.find((t) => t.id === toTeamId);
-    if (!toTeam) return { ok: false, reason: "Destination team not found" };
-    if (toTeam.tournamentId !== player.tournamentId) return { ok: false, reason: "Must transfer within same tournament." };
-    if (toTeam.id === player.teamId) return { ok: false, reason: "Player is already on that team." };
-
-    const fromTeamId = player.teamId;
-
-    setPlayers((prev) => prev.map((p) => (p.id === playerId ? { ...p, teamId: toTeamId } : p)));
-
-    const log: TransferLog = {
-      id: uid(),
-      leagueId: player.leagueId,
-      tournamentId: player.tournamentId,
-      playerId,
-      fromTeamId,
-      toTeamId,
-      by: (by ?? currentUser.name ?? "Admin").trim() || "Admin",
-      createdAt: new Date().toISOString(),
-    };
-    setTransferLogs((prev) => [log, ...prev]);
-
-    return { ok: true };
-  };
-
-  const tickMatch: Store["tickMatch"] = (matchId) => {
-    setMatches((prev) =>
-      prev.map((m) => {
-        if (m.id !== matchId) return m;
-        if (m.status !== "Live") return m;
-        return { ...m, clockSeconds: Math.min(m.durationSeconds, m.clockSeconds + 1) };
-      })
-    );
-  };
-
-  const addEvent: Store["addEvent"] = ({ matchId, type, teamId, playerName, minute }) => {
-    setMatches((prev) =>
-      prev.map((m) => {
-        if (m.id !== matchId) return m;
-        const e: MatchEvent = { id: uid(), type, teamId, playerName: playerName.trim() || "Player", minute };
-        return { ...m, events: [e, ...m.events] };
-      })
-    );
-  };
-
-  const sendTeamMessage: Store["sendTeamMessage"] = ({ leagueId, teamId, sender, body }) => {
-    const msg: TeamMessage = { id: uid(), leagueId, teamId, sender: sender.trim() || "Sender", body: body.trim(), createdAt: new Date().toISOString() };
-    setMessages((prev) => [...prev, msg]);
-  };
-
-  const value = useMemo(
+  const store: AppStore = useMemo(
     () => ({
       currentUser,
       setRole,
-      setTeamForRep,
       leagues,
       activeLeagueId,
       setActiveLeague,
-      activeLeague,
+
       tournaments,
       teams,
       players,
-      transferLogs,
       matches,
-      announcements,
+      loggedEvents,
       messages,
-      ads,
-      can: canWrap,
-      createTournament,
-      addTeam,
+
+      can,
+      setTeamForRep,
+
+      createTeam,
       addPlayer,
-      toggleVerifyPlayer,
-      toggleRosterLock,
-      transferPlayer,
-      tickMatch,
-      addEvent,
+      removePlayer,
+      invitePlayer,
+
+      logEvent,
+      setMatchStatus,
+      tickMatchClock,
+
       sendTeamMessage,
+
+      payments,
+      createPayment,
+      markPaymentPaid,
+      payFine,
+      buyCard,
+      registerTournament,
+      subscribeLeague,
+      sponsorPayment,
     }),
-    [currentUser, leagues, activeLeagueId, activeLeague, tournaments, teams, players, transferLogs, matches, announcements, messages, ads]
+    [
+      currentUser,
+      leagues,
+      activeLeagueId,
+      tournaments,
+      teams,
+      players,
+      matches,
+      loggedEvents,
+      messages,
+      payments,
+    ]
   );
 
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
-}
-
-export function useAppStore() {
-  const v = useContext(Ctx);
-  if (!v) throw new Error("useAppStore must be used inside AppStoreProvider");
-  return v;
+  return <AppStoreContext.Provider value={store}>{children}</AppStoreContext.Provider>;
 }

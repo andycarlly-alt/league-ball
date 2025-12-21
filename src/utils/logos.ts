@@ -1,20 +1,4 @@
-﻿export type LogoKey =
-  | "nvt"
-  | "spartan"
-  | "lanham"
-  | "elite"
-  | "balisao"
-  | "nova"
-  | "delaware-progressives"
-  | "vfc"
-  | "social-boyz"
-  | "bvfc"
-  | "zoo-zoo"
-  | "nevt"
-  | "delaware-vets"
-  | "nj-ndamba"
-  | "landover"
-  | "placeholder";
+﻿import type { LogoKey } from "../state/AppStore";
 
 export function getLogoSource(key?: LogoKey) {
   switch (key) {
@@ -51,6 +35,7 @@ export function getLogoSource(key?: LogoKey) {
       return require("../../assets/logos/teams/landover.png");
 
     default:
+      // fallback to NVT brand logo (you DO have it)
       return require("../../assets/logos/brand/nvt.png");
   }
 }
