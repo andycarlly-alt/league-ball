@@ -1,7 +1,7 @@
-﻿import { useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { useAppStore } from "../../src/state/AppStore";
+import { useAppStore } from "../src/state/AppStore";
 
 const roles = ["LEAGUE_ADMIN", "TOURNAMENT_ADMIN", "TEAM_REP", "REFEREE", "FAN"];
 
@@ -21,6 +21,10 @@ export default function ProfileTab() {
 
   const activeLeague = (leagues ?? []).find((l: any) => l.id === activeLeagueId);
   const leagueTeams = (teams ?? []).filter((t: any) => t.leagueId === activeLeagueId);
+
+  // DEBUG: Log the role
+  console.log("Current Role:", currentUser?.role);
+  console.log("Is LEAGUE_ADMIN?", currentUser?.role === "LEAGUE_ADMIN");
 
   return (
     <ScrollView
@@ -70,13 +74,38 @@ export default function ProfileTab() {
         </Text>
       </View>
 
-      {/* ADMIN TOOLS - Only for LEAGUE_ADMIN */}
-      {currentUser?.role === "LEAGUE_ADMIN" && (
+      {/* DEBUG SECTION - ALWAYS VISIBLE */}
+      <View
+        style={{
+          backgroundColor: "#FF3B30",
+          borderRadius: 14,
+          padding: 16,
+          borderWidth: 2,
+          borderColor: "#FFF",
+        }}
+      >
+        <Text style={{ color: "#FFF", fontWeight: "900", fontSize: 16 }}>
+          🔍 DEBUG INFO
+        </Text>
+        <Text style={{ color: "#FFF", marginTop: 8 }}>
+          Current Role: {currentUser?.role || "undefined"}
+        </Text>
+        <Text style={{ color: "#FFF", marginTop: 4 }}>
+          Is LEAGUE_ADMIN: {currentUser?.role === "LEAGUE_ADMIN" ? "YES ✅" : "NO ❌"}
+        </Text>
+        <Text style={{ color: "#FFF", marginTop: 4 }}>
+          Should Show Admin Tools: {currentUser?.role === "LEAGUE_ADMIN" ? "YES" : "NO"}
+        </Text>
+      </View>
+
+      {/* ADMIN QUICK LINKS - This should show when LEAGUE_ADMIN */}
+      {currentUser?.role === "LEAGUE_ADMIN" ? (
         <View style={{ gap: 10 }}>
           <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>
             🔐 Admin Tools
           </Text>
 
+          {/* Revenue Dashboard */}
           <TouchableOpacity
             onPress={() => router.push('/admin/revenue')}
             style={{
@@ -104,6 +133,7 @@ export default function ProfileTab() {
             <Text style={{ color: "#F2D100", fontSize: 24 }}>→</Text>
           </TouchableOpacity>
 
+          {/* Billing Link */}
           <TouchableOpacity
             onPress={() => router.push('/billing')}
             style={{
@@ -127,6 +157,23 @@ export default function ProfileTab() {
             </View>
             <Text style={{ color: "#22C6D2", fontSize: 24 }}>→</Text>
           </TouchableOpacity>
+        </View>
+      ) : (
+        <View
+          style={{
+            backgroundColor: "#0A2238",
+            borderRadius: 14,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,0.08)",
+          }}
+        >
+          <Text style={{ color: "#FF9500", fontWeight: "900" }}>
+            ⚠️ Not LEAGUE_ADMIN
+          </Text>
+          <Text style={{ color: "#9FB3C8", marginTop: 6 }}>
+            Switch to LEAGUE_ADMIN role to see admin tools
+          </Text>
         </View>
       )}
 

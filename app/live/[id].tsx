@@ -1,4 +1,4 @@
-// app/live/[matchId].tsx - WITH BETTING POOL
+// app/live/[id].tsx - WITH BETTING POOL
 import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -37,8 +37,8 @@ function scoreFromEvents(matchId: string, events: any[], homeTeamId: string, awa
 }
 
 export default function LiveMatchScreen() {
-  const { matchId } = useLocalSearchParams<{ matchId: string }>();
-  const id = String(matchId ?? "");
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const matchId = String(id ?? "");
 
   const {
     matches,
@@ -51,17 +51,17 @@ export default function LiveMatchScreen() {
     sponsorsAds,
   } = useAppStore() as any;
 
-  const match = useMemo(() => (matches ?? []).find((m: any) => String(m.id) === id), [matches, id]);
+  const match = useMemo(() => (matches ?? []).find((m: any) => String(m.id) === matchId), [matches, matchId]);
   const home = useMemo(() => (teams ?? []).find((t: any) => t.id === match?.homeTeamId), [teams, match]);
   const away = useMemo(() => (teams ?? []).find((t: any) => t.id === match?.awayTeamId), [teams, match]);
 
   const eventsForMatch = useMemo(() => {
-    return (matchEvents ?? []).filter((e: any) => e.matchId === id);
-  }, [matchEvents, id]);
+    return (matchEvents ?? []).filter((e: any) => e.matchId === matchId);
+  }, [matchEvents, matchId]);
 
   const score = useMemo(() => {
-    return scoreFromEvents(id, matchEvents ?? [], match?.homeTeamId, match?.awayTeamId);
-  }, [id, matchEvents, match]);
+    return scoreFromEvents(matchId, matchEvents ?? [], match?.homeTeamId, match?.awayTeamId);
+  }, [matchId, matchEvents, match]);
 
   // === BETTING POOL STATE (Local to this screen) ===
   const [myBets, setMyBets] = useState<Bet[]>([]);
