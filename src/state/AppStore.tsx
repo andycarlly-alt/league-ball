@@ -1,4 +1,4 @@
-// src/state/AppStore.tsx
+// src/state/AppStore.tsx - UPDATED WITH createMatch FUNCTION
 import React, { createContext, ReactNode, useContext, useMemo, useState } from "react";
 
 export type Role = "LEAGUE_ADMIN" | "TOURNAMENT_ADMIN" | "TEAM_REP" | "REFEREE" | "FAN";
@@ -45,7 +45,7 @@ export type Player = {
   fullName: string;
   shirtNumber?: string;
   position?: string;
-  dob?: string; // ISO string
+  dob?: string;
   verified?: boolean;
   verificationNote?: string;
   createdAt?: number;
@@ -53,14 +53,24 @@ export type Player = {
 
 export type MatchStatus = "SCHEDULED" | "LIVE" | "FINAL";
 
+// UPDATED: Enhanced Match type
 export type Match = {
   id: string;
   leagueId: string;
   tournamentId?: string | null;
   homeTeamId: string;
   awayTeamId: string;
-  kickoffAt?: number; // epoch ms
+  kickoffAt?: number;
   status: MatchStatus;
+  field?: string;
+  date?: string;
+  time?: string;
+  homeScore?: number;
+  awayScore?: number;
+  clockSec?: number;
+  durationSec?: number;
+  isLive?: boolean;
+  createdAt?: number;
 };
 
 export type LoggedEventType = "GOAL" | "YELLOW" | "RED";
@@ -91,7 +101,7 @@ export type User = {
   name: string;
   role: Role;
   subscription: SubscriptionStatus;
-  teamId?: string | null; // for TEAM_REP / players later
+  teamId?: string | null;
 };
 
 export type PaymentType =
@@ -110,6 +120,42 @@ export type Payment = {
   createdAt: number;
   status: "PENDING" | "PAID" | "FAILED";
   meta?: Record<string, any>;
+};
+
+export type PendingPayment = {
+  id: string;
+  type: PaymentType | "CARD_FINE" | "BETTING_DEPOSIT" | "DIGITAL_ID";
+  amount: number;
+  status: "PENDING" | "PAID" | "OVERDUE";
+  createdAt: number;
+  dueDate?: number;
+  teamId?: string;
+  teamName?: string;
+  playerId?: string;
+  playerName?: string;
+  tournamentId?: string;
+  tournamentName?: string;
+  cardType?: "YELLOW" | "RED";
+  vendorPackage?: string;
+  companyName?: string;
+  userId?: string;
+};
+
+export type Bet = {
+  id: string;
+  userId: string;
+  userName?: string;
+  matchId: string;
+  amount: number;
+  pick: string;
+  odds?: number;
+  placedAt: number;
+};
+
+export type BettingPool = {
+  matchId: string;
+  totalAmount: number;
+  bets: Bet[];
 };
 
 export type TransferLog = {
@@ -178,7 +224,6 @@ type InvitePlayerInput = {
 };
 
 type AppStore = {
-  // session / auth-ish
   currentUser: User;
   setRole: (role: Role) => void;
   setSubscription: (s: SubscriptionStatus) => void;
@@ -197,33 +242,55 @@ type AppStore = {
     context?: { teamId?: string }
   ) => boolean;
 
-  // data
   leagues: League[];
   activeLeagueId: string;
   activeLeague?: League | null;
   setActiveLeagueId: (id: string) => void;
   setActiveLeague: (id: string) => void;
 
-  tournaments: any[]; // keep loose for now to match screens
+  tournaments: any[];
   teams: Team[];
   players: Player[];
   matches: Match[];
   loggedEvents: LoggedEvent[];
-  matchEvents: LoggedEvent[]; // alias
+  matchEvents: LoggedEvent[];
   messages: Message[];
   payments: Payment[];
   announcements: Announcement[];
   transferLogs: TransferLog[];
   sponsorsAds: SponsorAd[];
 
-  // selectors / helpers
+  pendingPayments: PendingPayment[];
+  addPendingPayment: (payment: PendingPayment) => void;
+  markPaymentPaid: (paymentId: string) => void;
+  getPendingPayments: () => PendingPayment[];
+
+  walletBalance: number;
+  addToWallet: (amountCents: number) => void;
+  deductFromWallet: (amountCents: number) => void;
+
+  bettingPools: BettingPool[];
+  addBetToPool: (bet: Bet) => void;
+  getPoolForMatch: (matchId: string) => BettingPool | undefined;
+
   getTeamsForTournament: (tournamentId: string) => Team[];
   getPlayersForTeam: (teamId: string) => Player[];
   getEventsForMatch: (matchId: string) => LoggedEvent[];
 
-  // mutations
   createTournament: (input: CreateTournamentInput) => { id: string };
   createTeam: (input: CreateTeamInput) => string;
+  // NEW: createMatch function
+  createMatch: (matchData: {
+    leagueId: string;
+    tournamentId: string;
+    homeTeamId: string;
+    awayTeamId: string;
+    kickoffAt: number;
+    status: MatchStatus;
+    field?: string;
+    date?: string;
+    time?: string;
+  }) => string;
   addPlayer: (input: AddPlayerInput) => { ok: boolean; reason?: string; id?: string };
   removePlayer: (playerId: string) => void;
   invitePlayer: (input: InvitePlayerInput) => void;
@@ -238,23 +305,19 @@ type AppStore = {
     minute?: number | null;
   }) => void;
 
-  // payments (mock)
   createPaymentIntent: (input: {
     type: PaymentType;
     amount: number;
     meta?: Record<string, any>;
   }) => string;
-  markPaymentPaid: (paymentId: string) => void;
+  
   startCheckout: (plan: string) => Promise<{ ok: boolean; reason?: string }>;
   restorePurchases: () => Promise<{ ok: boolean; reason?: string }>;
 
-  // user/team management
   setTeamForRep: (teamId: string) => void;
 
-  // player verification
   toggleVerifyPlayer: (playerId: string) => { ok: boolean; reason?: string };
 
-  // tournament management
   toggleRosterLock: (tournamentId: string) => void;
   registerTeamForTournament: (input: {
     tournamentId: string;
@@ -263,14 +326,12 @@ type AppStore = {
     repPhone: string;
   }) => void;
 
-  // transfers
   transferPlayer: (input: {
     playerId: string;
     toTeamId: string;
     by: string;
   }) => { ok: boolean; reason?: string };
 
-  // match management
   setMatchLive: (matchId: string, isLive: boolean) => void;
   tickMatch: (matchId: string, seconds: number) => void;
   resetMatchClock: (matchId: string) => void;
@@ -293,7 +354,6 @@ function uid(prefix = "id") {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
 }
 
-// --- age helpers (used by roster banner feature) ---
 export function calcAge(dobIso?: string) {
   if (!dobIso) return 0;
   const dob = new Date(dobIso);
@@ -307,13 +367,11 @@ export function calcAge(dobIso?: string) {
 }
 
 export function ageBannerStyle(age: number) {
-  // under 30 => red, 30-34 => yellow, 35+ => green
   if (age > 0 && age < 30) return { bg: "#D33B3B", fg: "#FFFFFF", label: "Under 30" };
   if (age >= 30 && age <= 34) return { bg: "#F2D100", fg: "#061A2B", label: "30-34" };
   return { bg: "#1FBF75", fg: "#061A2B", label: "35+" };
 }
 
-// Seed: NVT league + your teams
 function buildSeed() {
   const leagueId = "league_nvt_2026";
   const tourId = "tour_nvt_demo";
@@ -328,7 +386,7 @@ function buildSeed() {
       leagueId,
       name: "NVT Demo Tournament",
       location: "DMV",
-      registrationFee: 150,
+      registrationFee: 15000,
       createdAt: Date.now(),
     },
   ];
@@ -350,6 +408,7 @@ function buildSeed() {
     { id: "team_landover", leagueId, tournamentId: tourId, name: "Landover FC", logoKey: "landover", repName: "Team Rep" },
   ];
 
+  // UPDATED: Enhanced matches with all fields
   const matches: Match[] = [
     {
       id: "match_1",
@@ -359,6 +418,15 @@ function buildSeed() {
       awayTeamId: "team_spartan",
       kickoffAt: Date.now() + 60 * 60 * 1000,
       status: "SCHEDULED",
+      field: "Field 1",
+      date: new Date(Date.now() + 60 * 60 * 1000).toLocaleDateString(),
+      time: "3:00 PM",
+      clockSec: 0,
+      durationSec: 90 * 60,
+      isLive: false,
+      homeScore: 0,
+      awayScore: 0,
+      createdAt: Date.now(),
     },
     {
       id: "match_2",
@@ -368,6 +436,15 @@ function buildSeed() {
       awayTeamId: "team_elite",
       kickoffAt: Date.now() + 2 * 60 * 60 * 1000,
       status: "SCHEDULED",
+      field: "Field 2",
+      date: new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleDateString(),
+      time: "5:00 PM",
+      clockSec: 0,
+      durationSec: 90 * 60,
+      isLive: false,
+      homeScore: 0,
+      awayScore: 0,
+      createdAt: Date.now(),
     },
   ];
 
@@ -390,7 +467,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [transferLogs, setTransferLogs] = useState<TransferLog[]>([]);
 
-  // Mock sponsor/ad data for demo
+  const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
+  const [walletBalance, setWalletBalance] = useState(2500);
+  const [bettingPools, setBettingPools] = useState<BettingPool[]>([]);
+
   const sponsorsAds: SponsorAd[] = [
     { id: "sp1", kind: "SPONSOR", name: "Jersey Printing Co", tagline: "Same-day names & numbers" },
     { id: "sp2", kind: "AD", name: "Local Sports Bar", tagline: "Watch all NVT matches here!" },
@@ -413,7 +493,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setCurrentUser((u) => ({ ...u, subscription: s }));
   };
 
-  // Computed activeLeague
   const activeLeague = useMemo(() => {
     return leagues.find((l) => l.id === activeLeagueId) || null;
   }, [leagues, activeLeagueId]);
@@ -430,9 +509,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const role = currentUser.role;
     const isPro = activeLeague?.plan === "Pro";
 
-    // Subscription gates (demo): PRO required for certain features
     if ((permission === "PAYMENTS" || permission === "MANAGE_TOURNAMENTS") && currentUser.subscription !== "PRO") {
-      // still allow admins during demo if you want; keep strict for realism:
       if (role !== "LEAGUE_ADMIN") return false;
     }
 
@@ -444,12 +521,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       case "MANAGE_MATCH":
         return role === "LEAGUE_ADMIN" || role === "TOURNAMENT_ADMIN" || role === "REFEREE";
       case "VIEW_TEAM_ROSTER":
-        return true; // everybody can view, later restrict
+        return true;
       case "INVITE_PLAYER":
       case "REMOVE_PLAYER":
         return role === "LEAGUE_ADMIN" || role === "TOURNAMENT_ADMIN" || role === "TEAM_REP";
       case "ADD_PLAYER":
-        // Can add if admin, or if TEAM_REP for their own team
         if (role === "LEAGUE_ADMIN" || role === "TOURNAMENT_ADMIN") return true;
         if (role === "TEAM_REP" && context?.teamId) {
           return currentUser.teamId === context.teamId;
@@ -466,6 +542,49 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       default:
         return false;
     }
+  };
+
+  const addPendingPayment = (payment: PendingPayment) => {
+    setPendingPayments((prev) => [...prev, payment]);
+  };
+
+  const markPaymentPaid = (paymentId: string) => {
+    setPendingPayments((prev) =>
+      prev.map((p) => (p.id === paymentId ? { ...p, status: "PAID" as const } : p))
+    );
+    setPayments((prev) => (prev ?? []).map((p) => (p.id === paymentId ? { ...p, status: "PAID" } : p)));
+  };
+
+  const getPendingPayments = () => {
+    return pendingPayments.filter((p) => p.status === "PENDING");
+  };
+
+  const addToWallet = (amountCents: number) => {
+    setWalletBalance((prev) => prev + amountCents);
+  };
+
+  const deductFromWallet = (amountCents: number) => {
+    setWalletBalance((prev) => Math.max(0, prev - amountCents));
+  };
+
+  const addBetToPool = (bet: Bet) => {
+    const poolId = bet.matchId;
+    setBettingPools((prev) => {
+      const pool = prev.find((p) => p.matchId === poolId);
+      if (pool) {
+        return prev.map((p) =>
+          p.matchId === poolId
+            ? { ...p, totalAmount: p.totalAmount + bet.amount, bets: [...p.bets, bet] }
+            : p
+        );
+      } else {
+        return [...prev, { matchId: poolId, totalAmount: bet.amount, bets: [bet] }];
+      }
+    });
+  };
+
+  const getPoolForMatch = (matchId: string) => {
+    return bettingPools.find((p) => p.matchId === matchId);
   };
 
   const getTeamsForTournament = (tournamentId: string) => {
@@ -486,7 +605,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const createTournament = (input: CreateTournamentInput) => {
     const name = String(input?.name ?? "").trim();
     const id = uid("tour");
-    if (!name) return { id }; // don't crash, just create with placeholder
+    if (!name) return { id };
     
     const ageRule = input.ageRule ?? "O35";
     const ageRuleLabel = input.ageRuleLabel ?? "35+";
@@ -503,7 +622,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         registrationFee: Number(input.registrationFee ?? 0),
         ageRule,
         ageRuleLabel,
-        ageBand: ageRuleLabel, // alias for compatibility
+        ageBand: ageRuleLabel,
         status: input.status ?? "Open",
         rosterLocked: false,
         createdAt: Date.now(),
@@ -531,6 +650,44 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return id;
   };
 
+  // NEW: createMatch function implementation
+  const createMatch = (matchData: {
+    leagueId: string;
+    tournamentId: string;
+    homeTeamId: string;
+    awayTeamId: string;
+    kickoffAt: number;
+    status: MatchStatus;
+    field?: string;
+    date?: string;
+    time?: string;
+  }): string => {
+    const matchId = uid("match");
+    
+    const newMatch: Match = {
+      id: matchId,
+      leagueId: matchData.leagueId,
+      tournamentId: matchData.tournamentId,
+      homeTeamId: matchData.homeTeamId,
+      awayTeamId: matchData.awayTeamId,
+      kickoffAt: matchData.kickoffAt,
+      status: matchData.status,
+      field: matchData.field || "Field TBD",
+      date: matchData.date || new Date().toLocaleDateString(),
+      time: matchData.time || "TBD",
+      homeScore: 0,
+      awayScore: 0,
+      clockSec: 0,
+      durationSec: 90 * 60,
+      isLive: false,
+      createdAt: Date.now(),
+    };
+
+    setMatches((prev) => [...(prev ?? []), newMatch]);
+    
+    return matchId;
+  };
+
   const addPlayer = (input: AddPlayerInput) => {
     const fullName = String(input?.fullName ?? "").trim();
     const id = uid("player");
@@ -539,16 +696,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       return { ok: false, reason: "Player name is required", id };
     }
 
-    // Check if tournament exists and get its rules
     const tournamentId = input.tournamentId ?? null;
     const tournament = tournamentId ? tournaments.find((t: any) => t.id === tournamentId) : null;
     
-    // Check roster lock
     if (tournament?.rosterLocked) {
       return { ok: false, reason: "Roster is locked. Cannot add players.", id };
     }
     
-    // Validate age against tournament rules if DOB provided
     if (tournament && input.dob) {
       const age = calcAge(input.dob);
       const ageRule = tournament.ageRule ?? "O35";
@@ -588,8 +742,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   };
 
   const invitePlayer = (input: InvitePlayerInput) => {
-    // Demo-only placeholder (later: email/SMS invite)
-    // keep it non-crashing and visible via messages thread
     const contact = String(input.emailOrPhone ?? "").trim();
     if (!contact) return;
     const teamId = String(input.teamId ?? "");
@@ -642,9 +794,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       },
     ]);
 
-    // If match is scheduled, push it to LIVE when first event is logged (nice for demo)
     setMatches((prev) =>
-      (prev ?? []).map((m) => (m.id === mId && m.status === "SCHEDULED" ? { ...m, status: "LIVE" } : m))
+      (prev ?? []).map((m) => (m.id === mId && m.status === "SCHEDULED" ? { ...m, status: "LIVE" as MatchStatus } : m))
     );
   };
 
@@ -665,7 +816,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       },
     ]);
 
-    // Demo behavior: instantly mark as PAID (later integrate Stripe)
     setTimeout(() => {
       setPayments((prev) => (prev ?? []).map((p) => (p.id === id ? { ...p, status: "PAID" } : p)));
     }, 600);
@@ -673,17 +823,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return id;
   };
 
-  const markPaymentPaid = (paymentId: string) => {
-    const id = String(paymentId ?? "");
-    setPayments((prev) => (prev ?? []).map((p) => (p.id === id ? { ...p, status: "PAID" } : p)));
-  };
-
-  // Billing methods (mock)
   const startCheckout = async (plan: string): Promise<{ ok: boolean; reason?: string }> => {
-    // Mock checkout - instantly upgrade to Pro
     if (plan === "Pro") {
       setActiveLeagueId((prev) => {
-        // Update the league plan
         const updatedLeague = leagues.find((l) => l.id === prev);
         if (updatedLeague) {
           updatedLeague.plan = "Pro";
@@ -696,14 +838,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   };
 
   const restorePurchases = async (): Promise<{ ok: boolean; reason?: string }> => {
-    // Mock restore - check if current league has Pro
     if (activeLeague?.plan === "Pro") {
       return { ok: true };
     }
     return { ok: false, reason: "No active subscription found" };
   };
 
-  // Player verification
   const toggleVerifyPlayer = (playerId: string): { ok: boolean; reason?: string } => {
     const id = String(playerId ?? "");
     const player = players.find((p) => p.id === id);
@@ -727,7 +867,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   };
 
-  // Tournament management
   const toggleRosterLock = (tournamentId: string) => {
     const id = String(tournamentId ?? "");
     setTournaments((prev) =>
@@ -750,13 +889,11 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       tournamentId: input.tournamentId,
     });
 
-    // Optionally set this team as currentUser's team if they're a TEAM_REP
     if (currentUser.role === "TEAM_REP") {
       setCurrentUser((u) => ({ ...u, teamId }));
     }
   };
 
-  // Player transfers
   const transferPlayer = (input: {
     playerId: string;
     toTeamId: string;
@@ -772,25 +909,21 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       return { ok: false, reason: "Destination team not found" };
     }
 
-    // Check if both teams are in same tournament
     const fromTeam = teams.find((t) => t.id === player.teamId);
     if (fromTeam?.tournamentId !== toTeam.tournamentId) {
       return { ok: false, reason: "Can only transfer within the same tournament" };
     }
 
-    // Check roster lock
     const tournament = tournaments.find((t: any) => t.id === player.tournamentId);
     if (tournament?.rosterLocked) {
       return { ok: false, reason: "Roster is locked. Cannot transfer players." };
     }
 
-    // Perform transfer
     const fromTeamId = player.teamId;
     setPlayers((prev) =>
       prev.map((p) => (p.id === input.playerId ? { ...p, teamId: input.toTeamId } : p))
     );
 
-    // Log transfer
     setTransferLogs((prev) => [
       ...prev,
       {
@@ -807,10 +940,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return { ok: true };
   };
 
-  // Match management
   const setMatchLive = (matchId: string, isLive: boolean) => {
     setMatches((prev) =>
-      prev.map((m: any) => (m.id === matchId ? { ...m, isLive, status: isLive ? "LIVE" : m.status } : m))
+      prev.map((m: any) => (m.id === matchId ? { ...m, isLive, status: isLive ? "LIVE" as MatchStatus : m.status } : m))
     );
   };
 
@@ -829,13 +961,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const resetMatchClock = (matchId: string) => {
     setMatches((prev) =>
       prev.map((m: any) =>
-        m.id === matchId ? { ...m, clockSec: 0, isLive: false, status: "SCHEDULED" } : m
+        m.id === matchId ? { ...m, clockSec: 0, isLive: false, status: "SCHEDULED" as MatchStatus } : m
       )
     );
   };
 
   const logMatchEvent = (input: { matchId: string; type: LoggedEventType; teamId: string }) => {
-    // Get match to determine current time
     const match = matches.find((m: any) => m.id === input.matchId);
     const clockSec = match?.clockSec ?? 0;
     const minute = Math.min(90, Math.floor(clockSec / 60));
@@ -849,9 +980,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   };
 
   const placeBet = (input: { matchId: string; pick: string; wagerCents: number; odds: number }) => {
-    // Mock betting - just log it
     console.log("Bet placed:", input);
-    // In a real app, this would create a bet record and integrate with payment processing
   };
 
   const value: AppStore = {
@@ -871,12 +1000,23 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     players,
     matches,
     loggedEvents,
-    matchEvents: loggedEvents, // alias
+    matchEvents: loggedEvents,
     messages,
     payments,
     announcements,
     transferLogs,
     sponsorsAds,
+
+    pendingPayments,
+    addPendingPayment,
+    markPaymentPaid,
+    getPendingPayments,
+    walletBalance,
+    addToWallet,
+    deductFromWallet,
+    bettingPools,
+    addBetToPool,
+    getPoolForMatch,
 
     getTeamsForTournament,
     getPlayersForTeam,
@@ -884,6 +1024,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
     createTournament,
     createTeam,
+    createMatch, // NEW: Export createMatch
     addPlayer,
     removePlayer,
     invitePlayer,
@@ -892,7 +1033,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     logEvent,
 
     createPaymentIntent,
-    markPaymentPaid,
     startCheckout,
     restorePurchases,
 
