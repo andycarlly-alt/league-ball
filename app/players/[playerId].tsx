@@ -1,22 +1,28 @@
-// app/players/[playerId].tsx - ENHANCED WITH LICENSE SCANNING
+// app/players/[playerId].tsx - MULTI-DOCUMENT VERIFICATION SUPPORT
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
-import { ageBannerStyle, calcAge, useAppStore } from "../../src/state/AppStore";
+import { ageBannerStyle, calcAge, DocumentType, useAppStore } from "../../src/state/AppStore";
 
 type LicenseData = {
+  documentType: DocumentType | null;
   frontUri: string | null;
   backUri: string | null;
   parsedName: string | null;
   parsedDOB: string | null;
+  parsedAddress: string | null;
+  parsedDocumentNumber: string | null;
+  parsedExpiration: string | null;
+  parsedState: string | null;
+  parsedCountry: string | null;
   confidence: number;
 };
 
 export default function PlayerProfileScreen() {
   const { playerId } = useLocalSearchParams<{ playerId: string }>();
   const router = useRouter();
-  const { players, teams, tournaments, toggleVerifyPlayer, can } = useAppStore();
+  const { players, teams, tournaments, toggleVerifyPlayer, can, updatePlayerVerification } = useAppStore();
 
   const player = players.find((p) => p.id === playerId);
   const team = teams.find((t) => t.id === player?.teamId);
@@ -26,10 +32,16 @@ export default function PlayerProfileScreen() {
   const [uploading, setUploading] = useState(false);
   const [scanningLicense, setScanningLicense] = useState(false);
   const [licenseData, setLicenseData] = useState<LicenseData>({
+    documentType: null,
     frontUri: null,
     backUri: null,
     parsedName: null,
     parsedDOB: null,
+    parsedAddress: null,
+    parsedDocumentNumber: null,
+    parsedExpiration: null,
+    parsedState: null,
+    parsedCountry: null,
     confidence: 0,
   });
 
@@ -50,51 +62,104 @@ export default function PlayerProfileScreen() {
   const canVerify = can("VERIFY_PLAYER");
   const canInvite = can("INVITE_PLAYER");
 
-  // AI-POWERED LICENSE PARSING
-  const parseLicense = async (imageUri: string, side: 'front' | 'back') => {
+  // Document type info
+  const documentTypes: { type: DocumentType; label: string; icon: string; requiresBack: boolean }[] = [
+    { type: 'DRIVERS_LICENSE', label: "Driver's License", icon: "🚗", requiresBack: true },
+    { type: 'STATE_ID', label: "State ID", icon: "🪪", requiresBack: true },
+    { type: 'PASSPORT', label: "Passport", icon: "🛂", requiresBack: false },
+  ];
+
+  const selectedDocType = documentTypes.find(d => d.type === licenseData.documentType);
+
+  // AI-POWERED DOCUMENT PARSING
+  const parseDocument = async (imageUri: string, side: 'front' | 'back') => {
     setScanningLicense(true);
     
     try {
       // TODO: Integrate with OCR/AI service
-      // Options:
-      // 1. Google ML Kit Vision API
-      // 2. AWS Textract
-      // 3. Azure Computer Vision
-      // 4. Tesseract.js
-      // 5. Specialized services: Jumio, Onfido, Microblink
-      
       // Simulated AI parsing (replace with actual API call)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 2500));
       
-      // Mock parsed data (in production, this comes from OCR/AI service)
+      // Mock parsed data - varies by document type
       const mockParsedData = {
-        name: "JOHN DOE", // Extracted from license
-        dob: "01/15/1995", // Extracted from license
-        confidence: 0.95, // 95% confidence from AI
-        address: "123 Main St", // Additional data
-        licenseNumber: "D1234567",
-        expirationDate: "01/15/2028",
+        DRIVERS_LICENSE: {
+          name: "JOHN MICHAEL DOE",
+          dob: "03/15/1990",
+          address: "123 Main Street, Baltimore, MD 21201",
+          documentNumber: "D123-456-789-012",
+          expiration: "03/15/2028",
+          state: "MD",
+          country: "USA",
+          confidence: 0.96,
+        },
+        STATE_ID: {
+          name: "JOHN MICHAEL DOE",
+          dob: "03/15/1990",
+          address: "123 Main Street, Baltimore, MD 21201",
+          documentNumber: "ID987-654-321",
+          expiration: "03/15/2027",
+          state: "MD",
+          country: "USA",
+          confidence: 0.94,
+        },
+        PASSPORT: {
+          name: "DOE, JOHN MICHAEL",
+          dob: "15 MAR 1990",
+          address: "N/A",
+          documentNumber: "123456789",
+          expiration: "15 MAR 2030",
+          state: "N/A",
+          country: "USA",
+          confidence: 0.98,
+        },
       };
+
+      const docType = licenseData.documentType || 'DRIVERS_LICENSE';
+      const parsedInfo = mockParsedData[docType];
 
       if (side === 'front') {
         setLicenseData(prev => ({
           ...prev,
           frontUri: imageUri,
-          parsedName: mockParsedData.name,
-          parsedDOB: mockParsedData.dob,
-          confidence: mockParsedData.confidence,
+          parsedName: parsedInfo.name,
+          parsedDOB: parsedInfo.dob,
+          parsedAddress: parsedInfo.address,
+          parsedDocumentNumber: parsedInfo.documentNumber,
+          parsedExpiration: parsedInfo.expiration,
+          parsedState: parsedInfo.state,
+          parsedCountry: parsedInfo.country,
+          confidence: parsedInfo.confidence,
         }));
 
+        const docTypeLabel = selectedDocType?.label || "Document";
+
         Alert.alert(
-          "✅ License Scanned Successfully!",
-          `AI detected:\n\nName: ${mockParsedData.name}\nDOB: ${mockParsedData.dob}\nConfidence: ${(mockParsedData.confidence * 100).toFixed(0)}%\n\nWould you like to auto-fill player details?`,
+          `✅ ${docTypeLabel} Scanned Successfully!`,
+          `AI detected:\n\nName: ${parsedInfo.name}\nDOB: ${parsedInfo.dob}\nDocument #: ${parsedInfo.documentNumber}\nExpires: ${parsedInfo.expiration}\nConfidence: ${(parsedInfo.confidence * 100).toFixed(0)}%\n\nWould you like to auto-fill player details?`,
           [
             { text: "Cancel", style: "cancel" },
             {
-              text: "Auto-Fill",
+              text: "Auto-Fill & Save",
               onPress: () => {
-                Alert.alert("Success", "Player details updated with license information!");
-                // In production: updatePlayer({ name: mockParsedData.name, dob: mockParsedData.dob })
+                // Save to AppStore
+                if (updatePlayerVerification) {
+                  updatePlayerVerification({
+                    playerId: player.id,
+                    documentType: docType,
+                    documentFrontUrl: imageUri,
+                    documentBackUrl: licenseData.backUri || undefined,
+                    extractedName: parsedInfo.name,
+                    extractedDOB: parsedInfo.dob,
+                    extractedAddress: parsedInfo.address,
+                    extractedDocumentNumber: parsedInfo.documentNumber,
+                    extractedExpiration: parsedInfo.expiration,
+                    extractedState: parsedInfo.state,
+                    extractedCountry: parsedInfo.country,
+                    documentConfidence: parsedInfo.confidence * 100,
+                    verificationStatus: 'APPROVED',
+                  });
+                  Alert.alert("✅ Success!", "Player details updated and verified!");
+                }
               }
             }
           ]
@@ -104,42 +169,52 @@ export default function PlayerProfileScreen() {
           ...prev,
           backUri: imageUri,
         }));
-        Alert.alert("Success", "License back captured!");
+        Alert.alert("✅ Success!", `${selectedDocType?.label} back captured!`);
       }
 
     } catch (error) {
-      Alert.alert("Error", "Failed to parse license. Please try again.");
-      console.error("License parsing error:", error);
+      Alert.alert("Error", "Failed to parse document. Please try again.");
+      console.error("Document parsing error:", error);
     } finally {
       setScanningLicense(false);
     }
   };
 
-  const captureLicense = async (side: 'front' | 'back') => {
+  const captureDocument = async (side: 'front' | 'back') => {
+    if (!licenseData.documentType) {
+      Alert.alert("Select Document Type", "Please select a document type first.");
+      return;
+    }
+
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       
       if (status !== "granted") {
-        Alert.alert("Permission Required", "Camera access is needed to scan license.");
+        Alert.alert("Permission Required", "Camera access is needed to scan documents.");
         return;
       }
 
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [16, 10], // Standard ID card ratio
-        quality: 1, // High quality for OCR
+        aspect: licenseData.documentType === 'PASSPORT' ? [3, 4] : [16, 10],
+        quality: 1,
       });
 
       if (!result.canceled && result.assets[0]) {
-        await parseLicense(result.assets[0].uri, side);
+        await parseDocument(result.assets[0].uri, side);
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to capture license. Please try again.");
+      Alert.alert("Error", "Failed to capture document. Please try again.");
     }
   };
 
-  const uploadLicense = async (side: 'front' | 'back') => {
+  const uploadDocument = async (side: 'front' | 'back') => {
+    if (!licenseData.documentType) {
+      Alert.alert("Select Document Type", "Please select a document type first.");
+      return;
+    }
+
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       
@@ -151,15 +226,15 @@ export default function PlayerProfileScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
-        aspect: [16, 10],
+        aspect: licenseData.documentType === 'PASSPORT' ? [3, 4] : [16, 10],
         quality: 1,
       });
 
       if (!result.canceled && result.assets[0]) {
-        await parseLicense(result.assets[0].uri, side);
+        await parseDocument(result.assets[0].uri, side);
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to upload license. Please try again.");
+      Alert.alert("Error", "Failed to upload document. Please try again.");
     }
   };
 
@@ -237,7 +312,7 @@ export default function PlayerProfileScreen() {
           onPress: () => {
             Alert.alert(
               "Invite Sent! 📧",
-              `Invite sent to ${player.fullName}\n\nThey can now:\n1. Upload their photo\n2. Scan driver's license\n3. Confirm DOB\n4. Sign waiver\n\nYou'll be notified when complete.`
+              `Invite sent to ${player.fullName}\n\nThey can now:\n1. Upload their photo\n2. Scan government ID\n3. Confirm DOB\n4. Sign waiver\n\nYou'll be notified when complete.`
             );
           },
         },
@@ -310,108 +385,167 @@ export default function PlayerProfileScreen() {
           </View>
         </View>
 
-        {/* AI-POWERED LICENSE SCANNER - NEW! */}
+        {/* AI-POWERED DOCUMENT SCANNER */}
         <View style={{ backgroundColor: "#0A2238", borderRadius: 18, padding: 14, borderWidth: 2, borderColor: "#F2D100" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <Text style={{ fontSize: 24 }}>🤖</Text>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>AI License Scanner</Text>
+              <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>AI Document Scanner</Text>
               <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 2 }}>
                 Instant verification with AI-powered OCR
               </Text>
             </View>
           </View>
 
-          {scanningLicense && (
-            <View style={{ marginTop: 14, padding: 20, backgroundColor: "#0B2842", borderRadius: 12, alignItems: "center" }}>
-              <ActivityIndicator size="large" color="#F2D100" />
-              <Text style={{ color: "#F2D100", marginTop: 10, fontWeight: "900" }}>🤖 AI Processing...</Text>
-              <Text style={{ color: "#9FB3C8", marginTop: 4, fontSize: 12 }}>Extracting name, DOB, and details</Text>
+          {/* Document Type Selection */}
+          <View style={{ marginBottom: 14 }}>
+            <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Select Document Type</Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {documentTypes.map((docType) => (
+                <TouchableOpacity
+                  key={docType.type}
+                  onPress={() => setLicenseData(prev => ({ ...prev, documentType: docType.type, frontUri: null, backUri: null }))}
+                  style={{
+                    flex: 1,
+                    backgroundColor: licenseData.documentType === docType.type ? "#F2D100" : "#0B2842",
+                    padding: 12,
+                    borderRadius: 12,
+                    alignItems: "center",
+                    borderWidth: 2,
+                    borderColor: licenseData.documentType === docType.type ? "#F2D100" : "rgba(255,255,255,0.1)",
+                  }}
+                >
+                  <Text style={{ fontSize: 24, marginBottom: 4 }}>{docType.icon}</Text>
+                  <Text style={{
+                    color: licenseData.documentType === docType.type ? "#061A2B" : "#EAF2FF",
+                    fontWeight: "900",
+                    fontSize: 11,
+                    textAlign: "center"
+                  }}>
+                    {docType.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          )}
+          </View>
 
-          {/* License Front */}
-          <View style={{ marginTop: 14 }}>
-            <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>License Front</Text>
-            {licenseData.frontUri ? (
-              <View>
-                <Image
-                  source={{ uri: licenseData.frontUri }}
-                  style={{ width: "100%", height: 140, borderRadius: 12, backgroundColor: "#0B2842" }}
-                  resizeMode="cover"
-                />
-                {licenseData.parsedName && (
-                  <View style={{ marginTop: 8, backgroundColor: "rgba(52,199,89,0.1)", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "rgba(52,199,89,0.3)" }}>
-                    <Text style={{ color: "#34C759", fontWeight: "900", fontSize: 12 }}>
-                      ✓ AI Detected: {licenseData.parsedName} • DOB: {licenseData.parsedDOB}
-                    </Text>
-                    <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 2 }}>
-                      Confidence: {(licenseData.confidence * 100).toFixed(0)}%
+          {licenseData.documentType && (
+            <>
+              {scanningLicense && (
+                <View style={{ marginTop: 14, padding: 20, backgroundColor: "#0B2842", borderRadius: 12, alignItems: "center" }}>
+                  <ActivityIndicator size="large" color="#F2D100" />
+                  <Text style={{ color: "#F2D100", marginTop: 10, fontWeight: "900" }}>🤖 AI Processing...</Text>
+                  <Text style={{ color: "#9FB3C8", marginTop: 4, fontSize: 12 }}>Extracting data from {selectedDocType?.label}</Text>
+                </View>
+              )}
+
+              {/* Document Front */}
+              <View style={{ marginTop: 14 }}>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>
+                  {selectedDocType?.label} - Front
+                </Text>
+                {licenseData.frontUri ? (
+                  <View>
+                    <Image
+                      source={{ uri: licenseData.frontUri }}
+                      style={{ width: "100%", height: 140, borderRadius: 12, backgroundColor: "#0B2842" }}
+                      resizeMode="cover"
+                    />
+                    {licenseData.parsedName && (
+                      <View style={{ marginTop: 8, backgroundColor: "rgba(52,199,89,0.1)", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "rgba(52,199,89,0.3)" }}>
+                        <Text style={{ color: "#34C759", fontWeight: "900", fontSize: 12 }}>
+                          ✓ AI Detected: {licenseData.parsedName}
+                        </Text>
+                        <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 2 }}>
+                          DOB: {licenseData.parsedDOB} • Doc #: {licenseData.parsedDocumentNumber}
+                        </Text>
+                        <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 2 }}>
+                          Confidence: {(licenseData.confidence * 100).toFixed(0)}%
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <View style={{ height: 140, backgroundColor: "#0B2842", borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(242,209,0,0.3)", borderStyle: "dashed" }}>
+                    <Text style={{ color: "#9FB3C8", fontSize: 40 }}>{selectedDocType?.icon}</Text>
+                    <Text style={{ color: "#9FB3C8", marginTop: 6, fontWeight: "900", fontSize: 12 }}>
+                      Front of {selectedDocType?.label}
                     </Text>
                   </View>
                 )}
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => captureDocument('front')}
+                    style={{ flex: 1, backgroundColor: "#F2D100", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                  >
+                    <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>📷 Scan</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => uploadDocument('front')}
+                    style={{ flex: 1, backgroundColor: "#22C6D2", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                  >
+                    <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>🖼️ Upload</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            ) : (
-              <View style={{ height: 140, backgroundColor: "#0B2842", borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(242,209,0,0.3)", borderStyle: "dashed" }}>
-                <Text style={{ color: "#9FB3C8", fontSize: 40 }}>🪪</Text>
-                <Text style={{ color: "#9FB3C8", marginTop: 6, fontWeight: "900", fontSize: 12 }}>Front of License</Text>
-              </View>
-            )}
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-              <TouchableOpacity
-                onPress={() => captureLicense('front')}
-                style={{ flex: 1, backgroundColor: "#F2D100", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
-              >
-                <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>📷 Scan Front</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => uploadLicense('front')}
-                style={{ flex: 1, backgroundColor: "#22C6D2", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
-              >
-                <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>🖼️ Upload</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
 
-          {/* License Back */}
-          <View style={{ marginTop: 14 }}>
-            <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>License Back</Text>
-            {licenseData.backUri ? (
-              <Image
-                source={{ uri: licenseData.backUri }}
-                style={{ width: "100%", height: 140, borderRadius: 12, backgroundColor: "#0B2842" }}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={{ height: 140, backgroundColor: "#0B2842", borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(242,209,0,0.3)", borderStyle: "dashed" }}>
-                <Text style={{ color: "#9FB3C8", fontSize: 40 }}>🪪</Text>
-                <Text style={{ color: "#9FB3C8", marginTop: 6, fontWeight: "900", fontSize: 12 }}>Back of License</Text>
-              </View>
-            )}
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-              <TouchableOpacity
-                onPress={() => captureLicense('back')}
-                style={{ flex: 1, backgroundColor: "#F2D100", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
-              >
-                <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>📷 Scan Back</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => uploadLicense('back')}
-                style={{ flex: 1, backgroundColor: "#22C6D2", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
-              >
-                <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>🖼️ Upload</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+              {/* Document Back (only for License and State ID) */}
+              {selectedDocType?.requiresBack && (
+                <View style={{ marginTop: 14 }}>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>
+                    {selectedDocType?.label} - Back
+                  </Text>
+                  {licenseData.backUri ? (
+                    <Image
+                      source={{ uri: licenseData.backUri }}
+                      style={{ width: "100%", height: 140, borderRadius: 12, backgroundColor: "#0B2842" }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={{ height: 140, backgroundColor: "#0B2842", borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(242,209,0,0.3)", borderStyle: "dashed" }}>
+                      <Text style={{ color: "#9FB3C8", fontSize: 40 }}>{selectedDocType?.icon}</Text>
+                      <Text style={{ color: "#9FB3C8", marginTop: 6, fontWeight: "900", fontSize: 12 }}>
+                        Back of {selectedDocType?.label}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                    <TouchableOpacity
+                      onPress={() => captureDocument('back')}
+                      style={{ flex: 1, backgroundColor: "#F2D100", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                    >
+                      <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>📷 Scan</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => uploadDocument('back')}
+                      style={{ flex: 1, backgroundColor: "#22C6D2", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                    >
+                      <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>🖼️ Upload</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Passport Note */}
+              {licenseData.documentType === 'PASSPORT' && (
+                <View style={{ marginTop: 12, backgroundColor: "rgba(34,198,210,0.1)", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "rgba(34,198,210,0.3)" }}>
+                  <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 12 }}>📘 Passport Note:</Text>
+                  <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 4 }}>
+                    Only the photo page is needed for passports
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
 
           {/* AI Benefits */}
           <View style={{ marginTop: 12, backgroundColor: "rgba(242,209,0,0.1)", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "rgba(242,209,0,0.3)" }}>
             <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 12 }}>⚡ AI Benefits:</Text>
             <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 4, lineHeight: 16 }}>
-              • Instant name & DOB extraction{"\n"}
+              • Instant data extraction{"\n"}
               • 95%+ accuracy rate{"\n"}
               • No manual typing needed{"\n"}
-              • Prevents human error
+              • Supports multiple document types
             </Text>
           </View>
         </View>
@@ -475,7 +609,7 @@ export default function PlayerProfileScreen() {
               </Text>
               {licenseData.parsedName && (
                 <Text style={{ color: "#34C759", fontSize: 11, marginTop: 2 }}>
-                  ✓ Verified with AI license scan
+                  ✓ Verified with AI {selectedDocType?.label} scan
                 </Text>
               )}
             </View>
@@ -487,10 +621,28 @@ export default function PlayerProfileScreen() {
               </Text>
               {licenseData.parsedDOB && (
                 <Text style={{ color: "#34C759", fontSize: 11, marginTop: 2 }}>
-                  ✓ Verified with AI license scan
+                  ✓ Verified with AI {selectedDocType?.label} scan
                 </Text>
               )}
             </View>
+
+            {licenseData.parsedDocumentNumber && (
+              <View>
+                <Text style={{ color: "#9FB3C8", fontSize: 12 }}>Document Number</Text>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginTop: 4 }}>
+                  {licenseData.parsedDocumentNumber}
+                </Text>
+              </View>
+            )}
+
+            {licenseData.parsedExpiration && (
+              <View>
+                <Text style={{ color: "#9FB3C8", fontSize: 12 }}>Expiration Date</Text>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginTop: 4 }}>
+                  {licenseData.parsedExpiration}
+                </Text>
+              </View>
+            )}
 
             <View>
               <Text style={{ color: "#9FB3C8", fontSize: 12 }}>Team</Text>
@@ -515,7 +667,7 @@ export default function PlayerProfileScreen() {
           <View style={{ backgroundColor: "#0A2238", borderRadius: 18, padding: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
             <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>Player Invite</Text>
             <Text style={{ color: "#9FB3C8", marginTop: 6 }}>
-              Send invite so player can upload photo and scan license.
+              Send invite so player can upload photo and scan government ID.
             </Text>
 
             <TouchableOpacity
@@ -562,7 +714,8 @@ export default function PlayerProfileScreen() {
             • Prevent roster fraud{"\n"}
             • No physical ID needed{"\n"}
             • Digital verification trail{"\n"}
-            • AI-powered accuracy
+            • AI-powered accuracy{"\n"}
+            • Supports all document types
           </Text>
         </View>
       </ScrollView>
