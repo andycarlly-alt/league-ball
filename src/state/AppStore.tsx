@@ -1,4 +1,5 @@
-// src/state/AppStore.tsx - UPDATED WITH createMatch FUNCTION
+// src/state/AppStore.tsx - COMPLETE WITH GEOLOCATION & NOTIFICATIONS
+
 import React, { createContext, ReactNode, useContext, useMemo, useState } from "react";
 
 export type Role = "LEAGUE_ADMIN" | "TOURNAMENT_ADMIN" | "TEAM_REP" | "REFEREE" | "FAN";
@@ -36,8 +37,25 @@ export type Team = {
   repName?: string;
   logoKey?: LogoKey;
   playerCount?: number;
+  wins?: number;
+  draws?: number;
+  losses?: number;
 };
 
+// Document type for verification
+export type DocumentType = 'DRIVERS_LICENSE' | 'STATE_ID' | 'PASSPORT';
+
+// Field location data
+export type FieldLocation = {
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  parkingInfo?: string;
+  fieldNumber?: string;
+};
+
+// Enhanced Player type with verification data
 export type Player = {
   id: string;
   teamId: string;
@@ -49,11 +67,71 @@ export type Player = {
   verified?: boolean;
   verificationNote?: string;
   createdAt?: number;
+  
+  // Verification fields
+  documentType?: DocumentType | null;
+  documentVerified?: boolean;
+  documentVerificationDate?: string | null;
+  documentVerificationService?: 'jumio' | 'onfido' | 'manual' | null;
+  documentVerificationId?: string | null;
+  documentConfidence?: number;
+  
+  // Face data for game-day matching
+  faceEmbedding?: string | null;
+  facePhotoUrl?: string | null;
+  faceQuality?: {
+    brightness: number;
+    sharpness: number;
+  } | null;
+  
+  // Document images (encrypted storage URLs)
+  documentFrontUrl?: string | null;
+  documentBackUrl?: string | null;
+  
+  // Extracted data from document
+  extractedName?: string | null;
+  extractedDOB?: string | null;
+  extractedAddress?: string | null;
+  extractedDocumentNumber?: string | null;
+  extractedExpiration?: string | null;
+  extractedState?: string | null;
+  extractedCountry?: string | null;
+  
+  // Verification status
+  verificationStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVIEW_REQUIRED';
+  verificationNotes?: string | null;
+  
+  // Game day check-ins
+  lastCheckIn?: string | null;
+  totalCheckIns?: number;
+  checkInHistory?: CheckInRecord[];
+  
+  // Stats
+  goals?: number;
+  assists?: number;
+  yellowCards?: number;
+  redCards?: number;
+};
+
+// Check-in record type
+export type CheckInRecord = {
+  id: string;
+  matchId: string;
+  playerId: string;
+  timestamp: string;
+  faceMatchScore: number;
+  livenessScore: number;
+  approved: boolean;
+  checkInDuration: number;
+  refereeId: string;
+  deviceId: string;
+  photoUrl: string;
+  notes: string | null;
 };
 
 export type MatchStatus = "SCHEDULED" | "LIVE" | "FINAL";
 
-// UPDATED: Enhanced Match type
+// Enhanced Match type with geolocation
 export type Match = {
   id: string;
   leagueId: string;
@@ -71,6 +149,23 @@ export type Match = {
   durationSec?: number;
   isLive?: boolean;
   createdAt?: number;
+  homeTeam?: string;
+  awayTeam?: string;
+  minute?: number;
+  
+  // NEW: Field location data
+  fieldLocation?: FieldLocation | null;
+  
+  // NEW: Verification window
+  verificationWindowOpen?: boolean;
+  verificationStartTime?: number; // Opens 30 mins before kickoff
+  
+  // NEW: Notifications sent
+  notificationsSent?: {
+    thirtyMinAlert?: boolean;
+    fifteenMinAlert?: boolean;
+    gameStarting?: boolean;
+  };
 };
 
 export type LoggedEventType = "GOAL" | "YELLOW" | "RED";
@@ -110,7 +205,9 @@ export type PaymentType =
   | "CARD_FEE"
   | "FINE_PAYMENT"
   | "SPONSOR"
-  | "VENDOR_AD";
+  | "VENDOR_AD"
+  | "TEAM_REGISTRATION"
+  | "PLAYER_FEE";
 
 export type Payment = {
   id: string;
@@ -223,6 +320,36 @@ type InvitePlayerInput = {
   emailOrPhone: string;
 };
 
+// Update player verification data
+type UpdatePlayerVerificationInput = {
+  playerId: string;
+  documentType: DocumentType;
+  documentFrontUrl: string;
+  documentBackUrl?: string;
+  extractedName: string;
+  extractedDOB: string;
+  extractedAddress?: string;
+  extractedDocumentNumber?: string;
+  extractedExpiration?: string;
+  extractedState?: string;
+  extractedCountry?: string;
+  documentConfidence: number;
+  faceEmbedding?: string;
+  facePhotoUrl?: string;
+  verificationStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVIEW_REQUIRED';
+};
+
+// Game day check-in input
+type GameDayCheckInInput = {
+  playerId: string;
+  matchId: string;
+  livePhotoUrl: string;
+  faceMatchScore: number;
+  livenessScore: number;
+  refereeId: string;
+  deviceId: string;
+};
+
 type AppStore = {
   currentUser: User;
   setRole: (role: Role) => void;
@@ -279,7 +406,6 @@ type AppStore = {
 
   createTournament: (input: CreateTournamentInput) => { id: string };
   createTeam: (input: CreateTeamInput) => string;
-  // NEW: createMatch function
   createMatch: (matchData: {
     leagueId: string;
     tournamentId: string;
@@ -290,6 +416,7 @@ type AppStore = {
     field?: string;
     date?: string;
     time?: string;
+    fieldLocation?: FieldLocation;
   }) => string;
   addPlayer: (input: AddPlayerInput) => { ok: boolean; reason?: string; id?: string };
   removePlayer: (playerId: string) => void;
@@ -346,6 +473,15 @@ type AppStore = {
     wagerCents: number;
     odds: number;
   }) => void;
+
+  // Verification methods
+  updatePlayerVerification: (input: UpdatePlayerVerificationInput) => { ok: boolean; reason?: string };
+  getVerifiedPlayer: (playerId: string) => Player | null;
+  recordCheckIn: (input: GameDayCheckInInput) => { ok: boolean; reason?: string };
+  getPlayerCheckIns: (playerId: string) => CheckInRecord[];
+  
+  // NEW: Notification methods
+  markNotificationSent: (matchId: string, type: 'thirtyMinAlert' | 'fifteenMinAlert' | 'gameStarting') => void;
 };
 
 const AppStoreContext = createContext<AppStore | null>(null);
@@ -392,23 +528,23 @@ function buildSeed() {
   ];
 
   const teams: Team[] = [
-    { id: "team_spartan", leagueId, tournamentId: tourId, name: "Spartan Veterans FC", logoKey: "spartan", repName: "Team Rep" },
-    { id: "team_lanham", leagueId, tournamentId: tourId, name: "Lanham Veteran FC", logoKey: "lanham", repName: "Team Rep" },
-    { id: "team_elite", leagueId, tournamentId: tourId, name: "Elite Veterans FC", logoKey: "elite", repName: "Team Rep" },
-    { id: "team_balisao", leagueId, tournamentId: tourId, name: "Balisao Veterans Club", logoKey: "balisao", repName: "Team Rep" },
-    { id: "team_nova", leagueId, tournamentId: tourId, name: "Nova Vets", logoKey: "nova", repName: "Team Rep" },
-    { id: "team_dp", leagueId, tournamentId: tourId, name: "Delaware Progressives", logoKey: "delaware-progressives", repName: "Team Rep" },
-    { id: "team_vfc", leagueId, tournamentId: tourId, name: "Veterans Football Club", logoKey: "vfc", repName: "Team Rep" },
-    { id: "team_social", leagueId, tournamentId: tourId, name: "Social Boyz", logoKey: "social-boyz", repName: "Team Rep" },
-    { id: "team_bvfc", leagueId, tournamentId: tourId, name: "Baltimore Veteran FC", logoKey: "bvfc", repName: "Andy (Manager)" },
-    { id: "team_zoo", leagueId, tournamentId: tourId, name: "Zoo Zoo", logoKey: "zoo-zoo", repName: "Team Rep" },
-    { id: "team_nevt", leagueId, tournamentId: tourId, name: "New England Veterans FC", logoKey: "nevt", repName: "Team Rep" },
-    { id: "team_delv", leagueId, tournamentId: tourId, name: "Delaware Veterans Club", logoKey: "delaware-vets", repName: "Team Rep" },
-    { id: "team_njnd", leagueId, tournamentId: tourId, name: "NJ Ndamba Veterans FC", logoKey: "nj-ndamba", repName: "Team Rep" },
-    { id: "team_landover", leagueId, tournamentId: tourId, name: "Landover FC", logoKey: "landover", repName: "Team Rep" },
+    { id: "team_spartan", leagueId, tournamentId: tourId, name: "Spartan Veterans FC", logoKey: "spartan", repName: "Team Rep", wins: 5, draws: 2, losses: 1 },
+    { id: "team_lanham", leagueId, tournamentId: tourId, name: "Lanham Veteran FC", logoKey: "lanham", repName: "Team Rep", wins: 4, draws: 3, losses: 1 },
+    { id: "team_elite", leagueId, tournamentId: tourId, name: "Elite Veterans FC", logoKey: "elite", repName: "Team Rep", wins: 4, draws: 2, losses: 2 },
+    { id: "team_balisao", leagueId, tournamentId: tourId, name: "Balisao Veterans Club", logoKey: "balisao", repName: "Team Rep", wins: 3, draws: 3, losses: 2 },
+    { id: "team_nova", leagueId, tournamentId: tourId, name: "Nova Vets", logoKey: "nova", repName: "Team Rep", wins: 3, draws: 2, losses: 3 },
+    { id: "team_dp", leagueId, tournamentId: tourId, name: "Delaware Progressives", logoKey: "delaware-progressives", repName: "Team Rep", wins: 2, draws: 4, losses: 2 },
+    { id: "team_vfc", leagueId, tournamentId: tourId, name: "Veterans Football Club", logoKey: "vfc", repName: "Team Rep", wins: 2, draws: 3, losses: 3 },
+    { id: "team_social", leagueId, tournamentId: tourId, name: "Social Boyz", logoKey: "social-boyz", repName: "Team Rep", wins: 2, draws: 2, losses: 4 },
+    { id: "team_bvfc", leagueId, tournamentId: tourId, name: "Baltimore Veteran FC", logoKey: "bvfc", repName: "Andy (Manager)", wins: 1, draws: 5, losses: 2 },
+    { id: "team_zoo", leagueId, tournamentId: tourId, name: "Zoo Zoo", logoKey: "zoo-zoo", repName: "Team Rep", wins: 1, draws: 3, losses: 4 },
+    { id: "team_nevt", leagueId, tournamentId: tourId, name: "New England Veterans FC", logoKey: "nevt", repName: "Team Rep", wins: 1, draws: 2, losses: 5 },
+    { id: "team_delv", leagueId, tournamentId: tourId, name: "Delaware Veterans Club", logoKey: "delaware-vets", repName: "Team Rep", wins: 0, draws: 5, losses: 3 },
+    { id: "team_njnd", leagueId, tournamentId: tourId, name: "NJ Ndamba Veterans FC", logoKey: "nj-ndamba", repName: "Team Rep", wins: 0, draws: 3, losses: 5 },
+    { id: "team_landover", leagueId, tournamentId: tourId, name: "Landover FC", logoKey: "landover", repName: "Team Rep", wins: 0, draws: 2, losses: 6 },
   ];
 
-  // UPDATED: Enhanced matches with all fields
+  // Matches with field locations - ADJUSTED TIMES FOR TESTING
   const matches: Match[] = [
     {
       id: "match_1",
@@ -416,39 +552,368 @@ function buildSeed() {
       tournamentId: tourId,
       homeTeamId: "team_bvfc",
       awayTeamId: "team_spartan",
-      kickoffAt: Date.now() + 60 * 60 * 1000,
+      kickoffAt: Date.now() + 30 * 60 * 1000, // 30 mins from now - WINDOW OPEN!
       status: "SCHEDULED",
-      field: "Field 1",
-      date: new Date(Date.now() + 60 * 60 * 1000).toLocaleDateString(),
-      time: "3:00 PM",
+      field: "Veterans Memorial Field 1",
+      date: new Date(Date.now() + 30 * 60 * 1000).toLocaleDateString(),
+      time: new Date(Date.now() + 30 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       clockSec: 0,
       durationSec: 90 * 60,
       isLive: false,
       homeScore: 0,
       awayScore: 0,
+      homeTeam: "Baltimore Veteran FC",
+      awayTeam: "Spartan Veterans FC",
       createdAt: Date.now(),
+      fieldLocation: {
+        name: 'Veterans Memorial Field 1',
+        address: '123 Veterans Parkway, Baltimore, MD 21201',
+        latitude: 39.2904,
+        longitude: -76.6122,
+        parkingInfo: 'Free parking in Lot A',
+        fieldNumber: 'Field 1',
+      },
+      notificationsSent: {
+        thirtyMinAlert: false,
+        fifteenMinAlert: false,
+        gameStarting: false,
+      },
     },
     {
       id: "match_2",
       leagueId,
       tournamentId: tourId,
-      homeTeamId: "team_lanham",
+      homeTeamId: "team_dp",
       awayTeamId: "team_elite",
-      kickoffAt: Date.now() + 2 * 60 * 60 * 1000,
+      kickoffAt: Date.now() + 90 * 60 * 1000, // 90 mins from now
       status: "SCHEDULED",
-      field: "Field 2",
-      date: new Date(Date.now() + 2 * 60 * 60 * 1000).toLocaleDateString(),
-      time: "5:00 PM",
+      field: "Veterans Memorial Field 2",
+      date: new Date(Date.now() + 90 * 60 * 1000).toLocaleDateString(),
+      time: new Date(Date.now() + 90 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       clockSec: 0,
       durationSec: 90 * 60,
       isLive: false,
       homeScore: 0,
       awayScore: 0,
+      homeTeam: "Delaware Progressives",
+      awayTeam: "Elite Veterans FC",
+      createdAt: Date.now(),
+      fieldLocation: {
+        name: 'Veterans Memorial Field 2',
+        address: '123 Veterans Parkway, Baltimore, MD 21201',
+        latitude: 39.2908,
+        longitude: -76.6118,
+        parkingInfo: 'Free parking in Lot A',
+        fieldNumber: 'Field 2',
+      },
+      notificationsSent: {
+        thirtyMinAlert: false,
+        fifteenMinAlert: false,
+        gameStarting: false,
+      },
+    },
+  ];
+
+  // Mock Players - Including Real Stakeholders!
+  const players: Player[] = [
+    // ========== BALTIMORE VETERAN FC (team_bvfc) - Home team for match_1 ==========
+    {
+      id: 'player_bvfc_1',
+      teamId: 'team_bvfc',
+      tournamentId: tourId,
+      fullName: 'Andy Kum', // 🎯 REAL STAKEHOLDER - Baltimore Manager
+      shirtNumber: '10',
+      position: 'Captain/Midfielder',
+      dob: '1985-03-15',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 8,
+      assists: 6,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_bvfc_2',
+      teamId: 'team_bvfc',
+      tournamentId: tourId,
+      fullName: 'David Martinez',
+      shirtNumber: '7',
+      position: 'Midfielder',
+      dob: '1987-07-22',
+      documentType: 'STATE_ID',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 5,
+      assists: 4,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_bvfc_3',
+      teamId: 'team_bvfc',
+      tournamentId: tourId,
+      fullName: 'James Wilson',
+      shirtNumber: '3',
+      position: 'Defender',
+      dob: '1986-11-08',
+      documentType: 'PASSPORT',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 1,
+      assists: 2,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_bvfc_4',
+      teamId: 'team_bvfc',
+      tournamentId: tourId,
+      fullName: 'Robert Brown',
+      shirtNumber: '1',
+      position: 'Goalkeeper',
+      dob: '1984-05-30',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 0,
+      assists: 0,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_bvfc_5',
+      teamId: 'team_bvfc',
+      tournamentId: tourId,
+      fullName: 'Michael Garcia',
+      shirtNumber: '15',
+      position: 'Midfielder',
+      dob: '1988-09-12',
+      documentType: 'STATE_ID',
+      documentVerified: false, // Not verified - will show warning
+      verificationStatus: 'PENDING',
+      verified: false,
+      goals: 2,
+      assists: 3,
+      createdAt: Date.now(),
+    },
+    
+    // ========== SPARTAN VETERANS FC (team_spartan) - Away team for match_1 ==========
+    {
+      id: 'player_spartan_1',
+      teamId: 'team_spartan',
+      tournamentId: tourId,
+      fullName: 'Mukong Adeso', // 🎯 REAL STAKEHOLDER - Spartan
+      shirtNumber: '9',
+      position: 'Forward',
+      dob: '1986-02-18',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 12,
+      assists: 5,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_spartan_2',
+      teamId: 'team_spartan',
+      tournamentId: tourId,
+      fullName: 'Thomas Anderson',
+      shirtNumber: '8',
+      position: 'Midfielder',
+      dob: '1985-06-25',
+      documentType: 'PASSPORT',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 7,
+      assists: 8,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_spartan_3',
+      teamId: 'team_spartan',
+      tournamentId: tourId,
+      fullName: 'Daniel Lee',
+      shirtNumber: '4',
+      position: 'Defender',
+      dob: '1987-12-03',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 2,
+      assists: 1,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_spartan_4',
+      teamId: 'team_spartan',
+      tournamentId: tourId,
+      fullName: 'Christopher Taylor',
+      shirtNumber: '1',
+      position: 'Goalkeeper',
+      dob: '1984-08-14',
+      documentType: 'STATE_ID',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 0,
+      assists: 0,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_spartan_5',
+      teamId: 'team_spartan',
+      tournamentId: tourId,
+      fullName: 'Anthony White',
+      shirtNumber: '11',
+      position: 'Forward',
+      dob: '1989-04-20',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 6,
+      assists: 4,
+      createdAt: Date.now(),
+    },
+
+    // ========== ELITE VETERANS FC (team_elite) - Away team for match_2 ==========
+    {
+      id: 'player_elite_1',
+      teamId: 'team_elite',
+      tournamentId: tourId,
+      fullName: 'Henry Atem', // 🎯 REAL STAKEHOLDER - Elite
+      shirtNumber: '10',
+      position: 'Captain/Forward',
+      dob: '1986-09-10',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 10,
+      assists: 7,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_elite_2',
+      teamId: 'team_elite',
+      tournamentId: tourId,
+      fullName: 'Kevin Johnson',
+      shirtNumber: '8',
+      position: 'Midfielder',
+      dob: '1987-04-15',
+      documentType: 'STATE_ID',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 6,
+      assists: 5,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_elite_3',
+      teamId: 'team_elite',
+      tournamentId: tourId,
+      fullName: 'Marcus Thompson',
+      shirtNumber: '5',
+      position: 'Defender',
+      dob: '1985-11-20',
+      documentType: 'PASSPORT',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 1,
+      assists: 2,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_elite_4',
+      teamId: 'team_elite',
+      tournamentId: tourId,
+      fullName: 'Brian Mitchell',
+      shirtNumber: '1',
+      position: 'Goalkeeper',
+      dob: '1984-06-30',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 0,
+      assists: 0,
+      createdAt: Date.now(),
+    },
+
+    // ========== DELAWARE PROGRESSIVES (team_dp) - Home team for match_2 ==========
+    {
+      id: 'player_dp_1',
+      teamId: 'team_dp',
+      tournamentId: tourId,
+      fullName: 'Valentine Esaka', // 🎯 REAL STAKEHOLDER - Delaware Progressives
+      shirtNumber: '7',
+      position: 'Forward',
+      dob: '1987-01-25',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 9,
+      assists: 6,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_dp_2',
+      teamId: 'team_dp',
+      tournamentId: tourId,
+      fullName: 'Carlos Santos',
+      shirtNumber: '6',
+      position: 'Midfielder',
+      dob: '1986-08-12',
+      documentType: 'STATE_ID',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 4,
+      assists: 5,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_dp_3',
+      teamId: 'team_dp',
+      tournamentId: tourId,
+      fullName: 'Patrick O\'Connor',
+      shirtNumber: '2',
+      position: 'Defender',
+      dob: '1985-03-18',
+      documentType: 'PASSPORT',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 0,
+      assists: 1,
+      createdAt: Date.now(),
+    },
+    {
+      id: 'player_dp_4',
+      teamId: 'team_dp',
+      tournamentId: tourId,
+      fullName: 'Steven Walsh',
+      shirtNumber: '1',
+      position: 'Goalkeeper',
+      dob: '1984-12-05',
+      documentType: 'DRIVERS_LICENSE',
+      documentVerified: true,
+      verificationStatus: 'APPROVED',
+      verified: true,
+      goals: 0,
+      assists: 0,
       createdAt: Date.now(),
     },
   ];
 
-  return { leagues, tournaments, teams, matches, leagueId, tourId };
+  return { leagues, tournaments, teams, matches, players, leagueId, tourId };
 }
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
@@ -459,7 +924,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const [tournaments, setTournaments] = useState<any[]>(seed.tournaments);
   const [teams, setTeams] = useState<Team[]>(seed.teams);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<Player[]>(seed.players); // ← USE SEED PLAYERS
   const [matches, setMatches] = useState<Match[]>(seed.matches);
   const [loggedEvents, setLoggedEvents] = useState<LoggedEvent[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -650,7 +1115,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return id;
   };
 
-  // NEW: createMatch function implementation
   const createMatch = (matchData: {
     leagueId: string;
     tournamentId: string;
@@ -661,6 +1125,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     field?: string;
     date?: string;
     time?: string;
+    fieldLocation?: FieldLocation;
   }): string => {
     const matchId = uid("match");
     
@@ -681,6 +1146,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       durationSec: 90 * 60,
       isLive: false,
       createdAt: Date.now(),
+      fieldLocation: matchData.fieldLocation || null,
+      notificationsSent: {
+        thirtyMinAlert: false,
+        fifteenMinAlert: false,
+        gameStarting: false,
+      },
     };
 
     setMatches((prev) => [...(prev ?? []), newMatch]);
@@ -729,6 +1200,10 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         position: input.position ?? "",
         dob: input.dob ?? "",
         verified: false,
+        documentVerified: false,
+        verificationStatus: 'PENDING',
+        totalCheckIns: 0,
+        checkInHistory: [],
         createdAt: Date.now(),
       },
     ]);
@@ -865,6 +1340,110 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     );
 
     return { ok: true };
+  };
+
+  const updatePlayerVerification = (input: UpdatePlayerVerificationInput): { ok: boolean; reason?: string } => {
+    const player = players.find((p) => p.id === input.playerId);
+    
+    if (!player) {
+      return { ok: false, reason: "Player not found" };
+    }
+
+    setPlayers((prev) =>
+      prev.map((p) =>
+        p.id === input.playerId
+          ? {
+              ...p,
+              documentType: input.documentType,
+              documentVerified: true,
+              documentVerificationDate: new Date().toISOString(),
+              documentConfidence: input.documentConfidence,
+              documentFrontUrl: input.documentFrontUrl,
+              documentBackUrl: input.documentBackUrl,
+              extractedName: input.extractedName,
+              extractedDOB: input.extractedDOB,
+              extractedAddress: input.extractedAddress,
+              extractedDocumentNumber: input.extractedDocumentNumber,
+              extractedExpiration: input.extractedExpiration,
+              extractedState: input.extractedState,
+              extractedCountry: input.extractedCountry,
+              faceEmbedding: input.faceEmbedding,
+              facePhotoUrl: input.facePhotoUrl,
+              verificationStatus: input.verificationStatus,
+              verified: input.verificationStatus === 'APPROVED',
+            }
+          : p
+      )
+    );
+
+    return { ok: true };
+  };
+
+  const getVerifiedPlayer = (playerId: string): Player | null => {
+    return players.find((p) => p.id === playerId) || null;
+  };
+
+  const recordCheckIn = (input: GameDayCheckInInput): { ok: boolean; reason?: string } => {
+    const player = players.find((p) => p.id === input.playerId);
+    
+    if (!player) {
+      return { ok: false, reason: "Player not found" };
+    }
+
+    if (!player.documentVerified) {
+      return { ok: false, reason: "Player must complete document verification first" };
+    }
+
+    const checkInRecord: CheckInRecord = {
+      id: uid("checkin"),
+      matchId: input.matchId,
+      playerId: input.playerId,
+      timestamp: new Date().toISOString(),
+      faceMatchScore: input.faceMatchScore,
+      livenessScore: input.livenessScore,
+      approved: input.faceMatchScore >= 95 && input.livenessScore >= 70,
+      checkInDuration: 2000,
+      refereeId: input.refereeId,
+      deviceId: input.deviceId,
+      photoUrl: input.livePhotoUrl,
+      notes: null,
+    };
+
+    setPlayers((prev) =>
+      prev.map((p) =>
+        p.id === input.playerId
+          ? {
+              ...p,
+              lastCheckIn: checkInRecord.timestamp,
+              totalCheckIns: (p.totalCheckIns || 0) + 1,
+              checkInHistory: [...(p.checkInHistory || []), checkInRecord],
+            }
+          : p
+      )
+    );
+
+    return { ok: true };
+  };
+
+  const getPlayerCheckIns = (playerId: string): CheckInRecord[] => {
+    const player = players.find((p) => p.id === playerId);
+    return player?.checkInHistory || [];
+  };
+
+  const markNotificationSent = (matchId: string, type: 'thirtyMinAlert' | 'fifteenMinAlert' | 'gameStarting') => {
+    setMatches((prev) =>
+      prev.map((m) =>
+        m.id === matchId
+          ? {
+              ...m,
+              notificationsSent: {
+                ...m.notificationsSent,
+                [type]: true,
+              },
+            }
+          : m
+      )
+    );
   };
 
   const toggleRosterLock = (tournamentId: string) => {
@@ -1024,7 +1603,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
     createTournament,
     createTeam,
-    createMatch, // NEW: Export createMatch
+    createMatch,
     addPlayer,
     removePlayer,
     invitePlayer,
@@ -1047,6 +1626,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     resetMatchClock,
     logMatchEvent,
     placeBet,
+
+    updatePlayerVerification,
+    getVerifiedPlayer,
+    recordCheckIn,
+    getPlayerCheckIns,
+    markNotificationSent,
   };
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;

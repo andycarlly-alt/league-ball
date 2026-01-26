@@ -7,7 +7,7 @@ import { normalize, spacing } from "../../src/utils/responsive";
 
 export default function HomeTab() {
   const router = useRouter();
-  const { currentUser, activeLeagueId, leagues, tournaments, matches, teams, players } = useAppStore() as any;
+  const { currentUser, activeLeagueId, leagues, tournaments, matches, teams, players, can } = useAppStore() as any;
 
   const activeLeague = useMemo(() => {
     return (leagues ?? []).find((l: any) => l.id === activeLeagueId);
@@ -57,6 +57,7 @@ export default function HomeTab() {
       style={{ flex: 1, backgroundColor: "#061A2B" }} 
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.huge }}
     >
+      {/* Header with Logo and Admin/Referee Buttons */}
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.xl }}>
         <View style={{ flex: 1, paddingRight: spacing.md }}>
           <Text style={{ color: "#F2D100", fontSize: normalize(28), fontWeight: "900" }}>NVT League</Text>
@@ -64,21 +65,76 @@ export default function HomeTab() {
             {activeLeague?.name ?? "Veterans Football League"}
           </Text>
         </View>
-        <View style={{ width: normalize(52), height: normalize(52), borderRadius: normalize(16), backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" }}>
-          <Image source={require("../../assets/logos/brand/nvt.png")} style={{ width: normalize(44), height: normalize(44), borderRadius: normalize(12) }} resizeMode="contain" />
+        
+        <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
+          {/* Logo */}
+          <View style={{ width: normalize(52), height: normalize(52), borderRadius: normalize(16), backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" }}>
+            <Image source={require("../../assets/logos/brand/nvt.png")} style={{ width: normalize(44), height: normalize(44), borderRadius: normalize(12) }} resizeMode="contain" />
+          </View>
         </View>
       </View>
 
-      {(currentUser?.role === "LEAGUE_ADMIN" || currentUser?.role === "TOURNAMENT_ADMIN") && (
-        <TouchableOpacity onPress={() => router.push('/admin')} style={{ backgroundColor: "#F2D100", padding: spacing.lg, borderRadius: normalize(16), marginBottom: spacing.xl, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.md, borderWidth: 2, borderColor: "#F2D100", elevation: 8 }}>
-          <Text style={{ fontSize: normalize(28) }}>🎯</Text>
-          <View>
-            <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(18) }}>Admin Portal</Text>
-            <Text style={{ color: "#061A2B", fontSize: normalize(12), marginTop: spacing.xs, opacity: 0.7 }}>Manage league, finances & more</Text>
-          </View>
-        </TouchableOpacity>
+      {/* Action Buttons Row */}
+      <View style={{ flexDirection: "row", gap: spacing.md, marginBottom: spacing.xl }}>
+        {/* Admin Portal Button */}
+        {can("VIEW_ADMIN") && (
+          <TouchableOpacity 
+            onPress={() => router.push('/admin')} 
+            style={{ 
+              flex: 1,
+              backgroundColor: "#F2D100", 
+              padding: spacing.lg, 
+              borderRadius: normalize(16), 
+              flexDirection: "row", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              gap: spacing.sm, 
+              borderWidth: 2, 
+              borderColor: "#F2D100", 
+              elevation: 8 
+            }}
+          >
+            <Text style={{ fontSize: normalize(24) }}>🎯</Text>
+            <View>
+              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(16) }}>Admin</Text>
+              <Text style={{ color: "#061A2B", fontSize: normalize(10), marginTop: 2, opacity: 0.7 }}>Portal</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {/* Referee Check-In Button */}
+        {can("MANAGE_MATCH") && (
+          <TouchableOpacity 
+            onPress={() => router.push('/referee/select-match')} 
+            style={{ 
+              flex: 1,
+              backgroundColor: "#34C759", 
+              padding: spacing.lg, 
+              borderRadius: normalize(16), 
+              flexDirection: "row", 
+              alignItems: "center", 
+              justifyContent: "center", 
+              gap: spacing.sm, 
+              borderWidth: 2, 
+              borderColor: "#34C759", 
+              elevation: 8 
+            }}
+          >
+            <Text style={{ fontSize: normalize(24) }}>📸</Text>
+            <View>
+              <Text style={{ color: "#FFF", fontWeight: "900", fontSize: normalize(16) }}>Check-In</Text>
+              <Text style={{ color: "#FFF", fontSize: normalize(10), marginTop: 2, opacity: 0.9 }}>Game Day</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* If both buttons shown, make them stack better on small screens */}
+      {!can("VIEW_ADMIN") && !can("MANAGE_MATCH") && (
+        <View style={{ height: 0 }} />
       )}
 
+      {/* Live Matches Section */}
       {liveMatches.length > 0 && (
         <View style={{ marginBottom: spacing.xl }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md }}>
@@ -110,8 +166,11 @@ export default function HomeTab() {
         </View>
       )}
 
+      {/* Leaderboards Section */}
       <View style={{ marginBottom: spacing.xl }}>
         <Text style={{ color: "#F2D100", fontSize: normalize(20), fontWeight: "900", marginBottom: spacing.md }}>🏆 Leaderboards</Text>
+        
+        {/* Top Teams */}
         <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.lg, marginBottom: spacing.md, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
           <Text style={{ color: "#EAF2FF", fontSize: normalize(16), fontWeight: "900", marginBottom: spacing.md }}>Top Teams</Text>
           {topTeams.length > 0 ? topTeams.map((team: any, index: number) => (
@@ -132,6 +191,7 @@ export default function HomeTab() {
           </TouchableOpacity>
         </View>
 
+        {/* Top Scorers */}
         <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.lg, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
           <Text style={{ color: "#EAF2FF", fontSize: normalize(16), fontWeight: "900", marginBottom: spacing.md }}>Top Scorers</Text>
           {topScorers.length > 0 ? topScorers.map((player: any, index: number) => (
@@ -152,6 +212,7 @@ export default function HomeTab() {
         </View>
       </View>
 
+      {/* Current Tournament Section */}
       {latestTournament && (
         <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.lg, marginBottom: spacing.xl, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
           <Text style={{ color: "#F2D100", fontSize: normalize(16), fontWeight: "900", marginBottom: spacing.sm }}>Current Tournament</Text>
@@ -163,6 +224,7 @@ export default function HomeTab() {
         </View>
       )}
 
+      {/* Sponsor/Vendor Ads Section */}
       <View style={{ marginBottom: spacing.xl }}>
         <Text style={{ color: "#9FB3C8", fontSize: normalize(12), fontWeight: "900", marginBottom: spacing.md, textAlign: "center" }}>SPONSORED BY</Text>
         {vendorAds.map((vendor: any) => (
@@ -184,6 +246,7 @@ export default function HomeTab() {
         ))}
       </View>
 
+      {/* Footer */}
       <View style={{ alignItems: "center", paddingVertical: spacing.xl }}>
         <Text style={{ color: "#9FB3C8", fontSize: normalize(11) }}>NVT Veterans League • Est. 2020</Text>
       </View>

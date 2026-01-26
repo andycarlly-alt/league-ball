@@ -1,11 +1,11 @@
-// app/admin/index.tsx - ADMIN PORTAL (FIXED NAVIGATION)
+// app/admin/index.tsx - ADMIN PORTAL WITH CHECK-INS TAB
 import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Alert, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAppStore } from "../../src/state/AppStore";
 import { getLogoSource } from "../../src/utils/logos";
 
-type AdminTab = "DASHBOARD" | "FINANCE" | "CARDS" | "RULES" | "ACTIONS" | "ANALYTICS";
+type AdminTab = "DASHBOARD" | "FINANCE" | "CARDS" | "RULES" | "ACTIONS" | "ANALYTICS" | "CHECK_INS";
 
 export default function AdminPortal() {
   const router = useRouter();
@@ -31,7 +31,7 @@ export default function AdminPortal() {
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerNumber, setNewPlayerNumber] = useState("");
 
-  // Check admin access - FIXED!
+  // Check admin access
   const isAdmin = can("MANAGE_TOURNAMENTS") || currentUser?.role === "LEAGUE_ADMIN" || currentUser?.role === "TOURNAMENT_ADMIN";
 
   if (!isAdmin) {
@@ -93,6 +93,21 @@ export default function AdminPortal() {
   const completedMatches = useMemo(() => {
     return leagueMatches.filter((m: any) => m.status === "FINAL").length;
   }, [leagueMatches]);
+
+  // Calculate check-in stats
+  const totalCheckIns = useMemo(() => {
+    return (players ?? []).reduce((sum: number, p: any) => sum + (p.checkInHistory?.length || 0), 0);
+  }, [players]);
+
+  const todaysCheckIns = useMemo(() => {
+    const today = new Date().toDateString();
+    return (players ?? []).reduce((sum: number, p: any) => {
+      const todayCheckIns = (p.checkInHistory || []).filter((c: any) => 
+        new Date(c.timestamp).toDateString() === today
+      ).length;
+      return sum + todayCheckIns;
+    }, 0);
+  }, [players]);
 
   // Tab button component
   const TabButton = ({ tab, label, icon }: { tab: AdminTab; label: string; icon: string }) => (
@@ -189,6 +204,7 @@ export default function AdminPortal() {
           <TabButton tab="DASHBOARD" label="Dashboard" icon="📊" />
           <TabButton tab="FINANCE" label="Finance" icon="💰" />
           <TabButton tab="CARDS" label="Cards" icon="🟨" />
+          <TabButton tab="CHECK_INS" label="Check-Ins" icon="📸" />
         </View>
         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
           <TabButton tab="RULES" label="Rules" icon="⚙️" />
@@ -329,6 +345,24 @@ export default function AdminPortal() {
                     ${(cardFines.filter((f: any) => f.status === "PENDING").reduce((sum: number, f: any) => sum + f.amount, 0) / 100).toFixed(2)} outstanding
                   </Text>
                 </View>
+                {totalCheckIns > 0 && (
+                  <View
+                    style={{
+                      backgroundColor: "#0B2842",
+                      padding: 12,
+                      borderRadius: 12,
+                      borderLeftWidth: 4,
+                      borderLeftColor: "#22C6D2",
+                    }}
+                  >
+                    <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
+                      {todaysCheckIns} Check-Ins Today
+                    </Text>
+                    <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
+                      {totalCheckIns} total check-ins
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -625,6 +659,140 @@ export default function AdminPortal() {
                   })}
               </ScrollView>
             </View>
+          </View>
+        )}
+
+        {/* CHECK-INS TAB */}
+        {activeTab === "CHECK_INS" && (
+          <View style={{ gap: 16 }}>
+            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>📸 Check-In Management</Text>
+
+            {/* Check-In Stats */}
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <View
+                style={{
+                  flex: 1,
+                  backgroundColor: "#0A2238",
+                  padding: 16,
+                  borderRadius: 16,
+                  borderWidth: 2,
+                  borderColor: "rgba(34,198,210,0.3)",
+                }}
+              >
+                <Text style={{ color: "#9FB3C8", fontSize: 12 }}>Total Check-Ins</Text>
+                <Text style={{ color: "#22C6D2", fontSize: 32, fontWeight: "900", marginTop: 4 }}>
+                  {totalCheckIns}
+                </Text>
+                <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 4 }}>
+                  All time
+                </Text>
+              </View>
+
+              <View
+                style={{
+                  flex: 1,
+                  backgroundColor: "#0A2238",
+                  padding: 16,
+                  borderRadius: 16,
+                  borderWidth: 2,
+                  borderColor: "rgba(52,199,89,0.3)",
+                }}
+              >
+                <Text style={{ color: "#34C759", fontSize: 12, fontWeight: "900" }}>Today</Text>
+                <Text style={{ color: "#34C759", fontSize: 32, fontWeight: "900", marginTop: 4 }}>
+                  {todaysCheckIns}
+                </Text>
+                <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 4 }}>
+                  check-ins
+                </Text>
+              </View>
+            </View>
+
+            {/* Dashboard Button */}
+            <TouchableOpacity
+              onPress={() => router.push('/admin/check-ins')}
+              style={{
+                backgroundColor: "#F2D100",
+                padding: 18,
+                borderRadius: 14,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 10,
+              }}
+            >
+              <Text style={{ fontSize: 28 }}>📸</Text>
+              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 18 }}>
+                Open Check-In Dashboard
+              </Text>
+            </TouchableOpacity>
+
+            {/* Features List */}
+            <View
+              style={{
+                backgroundColor: "#0A2238",
+                padding: 16,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.08)",
+              }}
+            >
+              <Text style={{ color: "#EAF2FF", fontSize: 16, fontWeight: "900", marginBottom: 12 }}>
+                Dashboard Features
+              </Text>
+              <View style={{ gap: 10 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>✅</Text>
+                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
+                    Review all player check-ins with face match scores
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>🔍</Text>
+                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
+                    Filter by match, status, and approval state
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>⚠️</Text>
+                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
+                    Identify borderline cases needing manual review
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>📄</Text>
+                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
+                    Export detailed reports for audit trails
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <Text style={{ fontSize: 20 }}>👍</Text>
+                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
+                    Manually approve or reject check-in attempts
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Recent Check-Ins Preview */}
+            {totalCheckIns > 0 && (
+              <View
+                style={{
+                  backgroundColor: "#0A2238",
+                  padding: 16,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.08)",
+                }}
+              >
+                <Text style={{ color: "#EAF2FF", fontSize: 16, fontWeight: "900", marginBottom: 12 }}>
+                  Recent Check-Ins Preview
+                </Text>
+                <Text style={{ color: "#9FB3C8", textAlign: "center", paddingVertical: 20 }}>
+                  Open dashboard to view full check-in history
+                </Text>
+              </View>
+            )}
           </View>
         )}
 
