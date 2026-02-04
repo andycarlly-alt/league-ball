@@ -1,6 +1,4 @@
-// src/state/AppStore.tsx - COMPLETE WITH GEOLOCATION & NOTIFICATIONS
-
-import React, { createContext, ReactNode, useContext, useMemo, useState } from "react";
+import React, { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 export type Role = "LEAGUE_ADMIN" | "TOURNAMENT_ADMIN" | "TEAM_REP" | "REFEREE" | "FAN";
 
@@ -42,10 +40,8 @@ export type Team = {
   losses?: number;
 };
 
-// Document type for verification
 export type DocumentType = 'DRIVERS_LICENSE' | 'STATE_ID' | 'PASSPORT';
 
-// Field location data
 export type FieldLocation = {
   name: string;
   address: string;
@@ -55,7 +51,6 @@ export type FieldLocation = {
   fieldNumber?: string;
 };
 
-// Enhanced Player type with verification data
 export type Player = {
   id: string;
   teamId: string;
@@ -67,28 +62,21 @@ export type Player = {
   verified?: boolean;
   verificationNote?: string;
   createdAt?: number;
-  
-  // Verification fields
+  userId?: string;
   documentType?: DocumentType | null;
   documentVerified?: boolean;
   documentVerificationDate?: string | null;
   documentVerificationService?: 'jumio' | 'onfido' | 'manual' | null;
   documentVerificationId?: string | null;
   documentConfidence?: number;
-  
-  // Face data for game-day matching
   faceEmbedding?: string | null;
   facePhotoUrl?: string | null;
   faceQuality?: {
     brightness: number;
     sharpness: number;
   } | null;
-  
-  // Document images (encrypted storage URLs)
   documentFrontUrl?: string | null;
   documentBackUrl?: string | null;
-  
-  // Extracted data from document
   extractedName?: string | null;
   extractedDOB?: string | null;
   extractedAddress?: string | null;
@@ -96,24 +84,19 @@ export type Player = {
   extractedExpiration?: string | null;
   extractedState?: string | null;
   extractedCountry?: string | null;
-  
-  // Verification status
   verificationStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVIEW_REQUIRED';
   verificationNotes?: string | null;
-  
-  // Game day check-ins
   lastCheckIn?: string | null;
   totalCheckIns?: number;
   checkInHistory?: CheckInRecord[];
-  
-  // Stats
   goals?: number;
   assists?: number;
   yellowCards?: number;
   redCards?: number;
+  motmWins?: number;
+  motmNominations?: number;
 };
 
-// Check-in record type
 export type CheckInRecord = {
   id: string;
   matchId: string;
@@ -131,7 +114,6 @@ export type CheckInRecord = {
 
 export type MatchStatus = "SCHEDULED" | "LIVE" | "FINAL";
 
-// Enhanced Match type with geolocation
 export type Match = {
   id: string;
   leagueId: string;
@@ -152,15 +134,9 @@ export type Match = {
   homeTeam?: string;
   awayTeam?: string;
   minute?: number;
-  
-  // NEW: Field location data
   fieldLocation?: FieldLocation | null;
-  
-  // NEW: Verification window
   verificationWindowOpen?: boolean;
-  verificationStartTime?: number; // Opens 30 mins before kickoff
-  
-  // NEW: Notifications sent
+  verificationStartTime?: number;
   notificationsSent?: {
     thirtyMinAlert?: boolean;
     fifteenMinAlert?: boolean;
@@ -238,6 +214,99 @@ export type PendingPayment = {
   userId?: string;
 };
 
+export interface BettingTicket {
+  id: string;
+  matchId: string;
+  userId: string;
+  userName: string;
+  wagerCents: number;
+  winner: "HOME" | "DRAW" | "AWAY";
+  overUnder: "OVER" | "UNDER";
+  btts: "YES" | "NO";
+  placedAt: number;
+  status: "PENDING" | "WON" | "LOST" | "CLOSEST";
+}
+
+export interface MatchPool {
+  matchId: string;
+  totalPotCents: number;
+  ticketCount: number;
+  status: "OPEN" | "LOCKED" | "SETTLED";
+  actualWinner?: "HOME" | "DRAW" | "AWAY";
+  actualOverUnder?: "OVER" | "UNDER";
+  actualBTTS?: "YES" | "NO";
+  totalGoals?: number;
+  settledAt?: number;
+  payoutCents?: number;
+}
+
+export interface MatchVote {
+  id: string;
+  matchId: string;
+  userId: string;
+  userName: string;
+  playerId: string;
+  playerName: string;
+  teamId: string;
+  votedAt: number;
+}
+
+export interface MotmAward {
+  matchId: string;
+  winnerId: string;
+  winnerName: string;
+  teamId: string;
+  teamName: string;
+  voteCount: number;
+  totalVotes: number;
+  votePercentage: number;
+  awardedAt: number;
+  bonusCents: number;
+}
+
+export interface TournamentTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  registrationFee: number;
+  ageRuleLabel: string;
+  minRosterSize: number;
+  maxRosterSize: number;
+  maxTeams: number;
+  matchDuration: number;
+  defaultLocation?: string;
+  status: "ACTIVE" | "ARCHIVED";
+  createdAt: number;
+  createdBy: string;
+}
+
+// ========== TEAM ELIGIBILITY TYPES ==========
+export interface TeamEligibility {
+  teamId: string;
+  isEligible: boolean;
+  blockedReason?: string;
+  outstandingFines: number;
+  outstandingFineCount: number;
+  adminOverride: boolean;
+  overrideBy?: string;
+  overrideAt?: number;
+  overrideReason?: string;
+}
+
+export interface CardFine {
+  id: string;
+  teamId: string;
+  playerId: string;
+  playerName: string;
+  cardType: "YELLOW" | "RED";
+  matchId: string;
+  amount: number;
+  status: "PENDING" | "PAID" | "WAIVED";
+  issuedAt: number;
+  dueDate: number;
+  paidAt?: number;
+}
+
 export type Bet = {
   id: string;
   userId: string;
@@ -290,6 +359,10 @@ type CreateTournamentInput = {
   ageRule?: string;
   ageRuleLabel?: string;
   status?: string;
+  minRosterSize?: number;
+  maxRosterSize?: number;
+  maxTeams?: number;
+  durationSec?: number;
 };
 
 type CreateTeamInput = {
@@ -313,6 +386,7 @@ type AddPlayerInput = {
   shirtNumber?: string;
   position?: string;
   dob?: string;
+  userId?: string;
 };
 
 type InvitePlayerInput = {
@@ -320,7 +394,6 @@ type InvitePlayerInput = {
   emailOrPhone: string;
 };
 
-// Update player verification data
 type UpdatePlayerVerificationInput = {
   playerId: string;
   documentType: DocumentType;
@@ -339,7 +412,6 @@ type UpdatePlayerVerificationInput = {
   verificationStatus: 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVIEW_REQUIRED';
 };
 
-// Game day check-in input
 type GameDayCheckInInput = {
   playerId: string;
   matchId: string;
@@ -368,13 +440,11 @@ type AppStore = {
     | "VIEW_ADMIN",
     context?: { teamId?: string }
   ) => boolean;
-
   leagues: League[];
   activeLeagueId: string;
   activeLeague?: League | null;
   setActiveLeagueId: (id: string) => void;
   setActiveLeague: (id: string) => void;
-
   tournaments: any[];
   teams: Team[];
   players: Player[];
@@ -386,24 +456,61 @@ type AppStore = {
   announcements: Announcement[];
   transferLogs: TransferLog[];
   sponsorsAds: SponsorAd[];
-
   pendingPayments: PendingPayment[];
   addPendingPayment: (payment: PendingPayment) => void;
   markPaymentPaid: (paymentId: string) => void;
   getPendingPayments: () => PendingPayment[];
-
   walletBalance: number;
   addToWallet: (amountCents: number) => void;
   deductFromWallet: (amountCents: number) => void;
-
   bettingPools: BettingPool[];
   addBetToPool: (bet: Bet) => void;
   getPoolForMatch: (matchId: string) => BettingPool | undefined;
-
+  bettingTickets: BettingTicket[];
+  matchPools: MatchPool[];
+  placeBettingTicket: (ticket: Omit<BettingTicket, "id" | "placedAt" | "status">) => string | null;
+  getMatchPool: (matchId: string) => MatchPool | null;
+  settleMatchPool: (matchId: string) => void;
+  canUserBet: (matchId: string, userId: string) => { canBet: boolean; reason?: string };
+  matchVotes: MatchVote[];
+  motmAwards: MotmAward[];
+  castMotmVote: (matchId: string, playerId: string) => { ok: boolean; reason?: string };
+  getUserMotmVote: (matchId: string, userId: string) => MatchVote | null;
+  getMotmLeaderboard: (matchId: string) => Array<{ playerId: string; playerName: string; teamId: string; count: number }>;
+  determineMotm: (matchId: string) => void;
+  getMotmAward: (matchId: string) => MotmAward | null;
+  tournamentTemplates: TournamentTemplate[];
+  createTournamentTemplate: (templateData: Omit<TournamentTemplate, "id" | "createdAt" | "createdBy">) => string;
+  updateTournamentTemplate: (templateId: string, updates: Partial<TournamentTemplate>) => void;
+  deleteTournamentTemplate: (templateId: string) => void;
+  getTournamentTemplate: (templateId: string) => TournamentTemplate | undefined;
+  archiveTournamentTemplate: (templateId: string) => void;
+  restoreTournamentTemplate: (templateId: string) => void;
+  // Team Eligibility & Fines
+  teamEligibility: Record<string, TeamEligibility>;
+  cardFines: CardFine[];
+  getTeamEligibility: (teamId: string) => TeamEligibility;
+  overrideTeamEligibility: (teamId: string, reason: string) => { ok: boolean; message: string };
+  removeTeamEligibilityOverride: (teamId: string) => { ok: boolean };
+  createCardFine: (input: {
+    teamId: string;
+    playerId: string;
+    playerName: string;
+    cardType: "YELLOW" | "RED";
+    matchId: string;
+  }) => string;
+  payCardFine: (fineId: string) => { ok: boolean; message: string };
+  getTeamFines: (teamId: string) => CardFine[];
+  getTeamUnpaidFines: (teamId: string) => CardFine[];
+  canTeamPlayMatch: (teamId: string) => { canPlay: boolean; reason?: string };
+  validateMatchEligibility: (matchId: string) => {
+    canStart: boolean;
+    blockedTeams: string[];
+    message?: string;
+  };
   getTeamsForTournament: (tournamentId: string) => Team[];
   getPlayersForTeam: (teamId: string) => Player[];
   getEventsForMatch: (matchId: string) => LoggedEvent[];
-
   createTournament: (input: CreateTournamentInput) => { id: string };
   createTeam: (input: CreateTeamInput) => string;
   createMatch: (matchData: {
@@ -421,9 +528,7 @@ type AppStore = {
   addPlayer: (input: AddPlayerInput) => { ok: boolean; reason?: string; id?: string };
   removePlayer: (playerId: string) => void;
   invitePlayer: (input: InvitePlayerInput) => void;
-
   sendTeamMessage: (input: SendTeamMessageInput) => void;
-
   logEvent: (input: {
     matchId: string;
     type: LoggedEventType;
@@ -431,20 +536,15 @@ type AppStore = {
     playerId?: string | null;
     minute?: number | null;
   }) => void;
-
   createPaymentIntent: (input: {
     type: PaymentType;
     amount: number;
     meta?: Record<string, any>;
   }) => string;
-  
   startCheckout: (plan: string) => Promise<{ ok: boolean; reason?: string }>;
   restorePurchases: () => Promise<{ ok: boolean; reason?: string }>;
-
   setTeamForRep: (teamId: string) => void;
-
   toggleVerifyPlayer: (playerId: string) => { ok: boolean; reason?: string };
-
   toggleRosterLock: (tournamentId: string) => void;
   registerTeamForTournament: (input: {
     tournamentId: string;
@@ -452,13 +552,11 @@ type AppStore = {
     repName: string;
     repPhone: string;
   }) => void;
-
   transferPlayer: (input: {
     playerId: string;
     toTeamId: string;
     by: string;
   }) => { ok: boolean; reason?: string };
-
   setMatchLive: (matchId: string, isLive: boolean) => void;
   tickMatch: (matchId: string, seconds: number) => void;
   resetMatchClock: (matchId: string) => void;
@@ -466,6 +564,7 @@ type AppStore = {
     matchId: string;
     type: LoggedEventType;
     teamId: string;
+    playerId?: string;
   }) => void;
   placeBet: (input: {
     matchId: string;
@@ -473,14 +572,10 @@ type AppStore = {
     wagerCents: number;
     odds: number;
   }) => void;
-
-  // Verification methods
   updatePlayerVerification: (input: UpdatePlayerVerificationInput) => { ok: boolean; reason?: string };
   getVerifiedPlayer: (playerId: string) => Player | null;
   recordCheckIn: (input: GameDayCheckInInput) => { ok: boolean; reason?: string };
   getPlayerCheckIns: (playerId: string) => CheckInRecord[];
-  
-  // NEW: Notification methods
   markNotificationSent: (matchId: string, type: 'thirtyMinAlert' | 'fifteenMinAlert' | 'gameStarting') => void;
 };
 
@@ -494,7 +589,6 @@ export function calcAge(dobIso?: string) {
   if (!dobIso) return 0;
   const dob = new Date(dobIso);
   if (isNaN(dob.getTime())) return 0;
-
   const now = new Date();
   let age = now.getFullYear() - dob.getFullYear();
   const m = now.getMonth() - dob.getMonth();
@@ -511,11 +605,9 @@ export function ageBannerStyle(age: number) {
 function buildSeed() {
   const leagueId = "league_nvt_2026";
   const tourId = "tour_nvt_demo";
-
   const leagues: League[] = [
     { id: leagueId, name: "NVT League", seasonLabel: "Demo Season", plan: "Free" },
   ];
-
   const tournaments = [
     {
       id: tourId,
@@ -526,7 +618,6 @@ function buildSeed() {
       createdAt: Date.now(),
     },
   ];
-
   const teams: Team[] = [
     { id: "team_spartan", leagueId, tournamentId: tourId, name: "Spartan Veterans FC", logoKey: "spartan", repName: "Team Rep", wins: 5, draws: 2, losses: 1 },
     { id: "team_lanham", leagueId, tournamentId: tourId, name: "Lanham Veteran FC", logoKey: "lanham", repName: "Team Rep", wins: 4, draws: 3, losses: 1 },
@@ -543,8 +634,6 @@ function buildSeed() {
     { id: "team_njnd", leagueId, tournamentId: tourId, name: "NJ Ndamba Veterans FC", logoKey: "nj-ndamba", repName: "Team Rep", wins: 0, draws: 3, losses: 5 },
     { id: "team_landover", leagueId, tournamentId: tourId, name: "Landover FC", logoKey: "landover", repName: "Team Rep", wins: 0, draws: 2, losses: 6 },
   ];
-
-  // Matches with field locations - ADJUSTED TIMES FOR TESTING
   const matches: Match[] = [
     {
       id: "match_1",
@@ -552,7 +641,7 @@ function buildSeed() {
       tournamentId: tourId,
       homeTeamId: "team_bvfc",
       awayTeamId: "team_spartan",
-      kickoffAt: Date.now() + 30 * 60 * 1000, // 30 mins from now - WINDOW OPEN!
+      kickoffAt: Date.now() + 30 * 60 * 1000,
       status: "SCHEDULED",
       field: "Veterans Memorial Field 1",
       date: new Date(Date.now() + 30 * 60 * 1000).toLocaleDateString(),
@@ -585,7 +674,7 @@ function buildSeed() {
       tournamentId: tourId,
       homeTeamId: "team_dp",
       awayTeamId: "team_elite",
-      kickoffAt: Date.now() + 90 * 60 * 1000, // 90 mins from now
+      kickoffAt: Date.now() + 90 * 60 * 1000,
       status: "SCHEDULED",
       field: "Veterans Memorial Field 2",
       date: new Date(Date.now() + 90 * 60 * 1000).toLocaleDateString(),
@@ -613,15 +702,12 @@ function buildSeed() {
       },
     },
   ];
-
-  // Mock Players - Including Real Stakeholders!
   const players: Player[] = [
-    // ========== BALTIMORE VETERAN FC (team_bvfc) - Home team for match_1 ==========
     {
       id: 'player_bvfc_1',
       teamId: 'team_bvfc',
       tournamentId: tourId,
-      fullName: 'Andy Kum', // 🎯 REAL STAKEHOLDER - Baltimore Manager
+      fullName: 'Andy Kum',
       shirtNumber: '10',
       position: 'Captain/Midfielder',
       dob: '1985-03-15',
@@ -632,6 +718,9 @@ function buildSeed() {
       goals: 8,
       assists: 6,
       createdAt: Date.now(),
+      userId: 'user_andy',
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_bvfc_2',
@@ -648,6 +737,8 @@ function buildSeed() {
       goals: 5,
       assists: 4,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_bvfc_3',
@@ -664,6 +755,8 @@ function buildSeed() {
       goals: 1,
       assists: 2,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_bvfc_4',
@@ -680,6 +773,8 @@ function buildSeed() {
       goals: 0,
       assists: 0,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_bvfc_5',
@@ -690,20 +785,20 @@ function buildSeed() {
       position: 'Midfielder',
       dob: '1988-09-12',
       documentType: 'STATE_ID',
-      documentVerified: false, // Not verified - will show warning
+      documentVerified: false,
       verificationStatus: 'PENDING',
       verified: false,
       goals: 2,
       assists: 3,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
-    
-    // ========== SPARTAN VETERANS FC (team_spartan) - Away team for match_1 ==========
     {
       id: 'player_spartan_1',
       teamId: 'team_spartan',
       tournamentId: tourId,
-      fullName: 'Mukong Adeso', // 🎯 REAL STAKEHOLDER - Spartan
+      fullName: 'Mukong Adeso',
       shirtNumber: '9',
       position: 'Forward',
       dob: '1986-02-18',
@@ -714,6 +809,9 @@ function buildSeed() {
       goals: 12,
       assists: 5,
       createdAt: Date.now(),
+      userId: 'user_mukong',
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_spartan_2',
@@ -730,6 +828,8 @@ function buildSeed() {
       goals: 7,
       assists: 8,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_spartan_3',
@@ -746,6 +846,8 @@ function buildSeed() {
       goals: 2,
       assists: 1,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_spartan_4',
@@ -762,6 +864,8 @@ function buildSeed() {
       goals: 0,
       assists: 0,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_spartan_5',
@@ -778,14 +882,15 @@ function buildSeed() {
       goals: 6,
       assists: 4,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
 
-    // ========== ELITE VETERANS FC (team_elite) - Away team for match_2 ==========
     {
       id: 'player_elite_1',
       teamId: 'team_elite',
       tournamentId: tourId,
-      fullName: 'Henry Atem', // 🎯 REAL STAKEHOLDER - Elite
+      fullName: 'Henry Atem',
       shirtNumber: '10',
       position: 'Captain/Forward',
       dob: '1986-09-10',
@@ -796,6 +901,9 @@ function buildSeed() {
       goals: 10,
       assists: 7,
       createdAt: Date.now(),
+      userId: 'user_henry',
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_elite_2',
@@ -812,6 +920,8 @@ function buildSeed() {
       goals: 6,
       assists: 5,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_elite_3',
@@ -828,6 +938,8 @@ function buildSeed() {
       goals: 1,
       assists: 2,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_elite_4',
@@ -844,14 +956,15 @@ function buildSeed() {
       goals: 0,
       assists: 0,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
 
-    // ========== DELAWARE PROGRESSIVES (team_dp) - Home team for match_2 ==========
     {
       id: 'player_dp_1',
       teamId: 'team_dp',
       tournamentId: tourId,
-      fullName: 'Valentine Esaka', // 🎯 REAL STAKEHOLDER - Delaware Progressives
+      fullName: 'Valentine Esaka',
       shirtNumber: '7',
       position: 'Forward',
       dob: '1987-01-25',
@@ -862,6 +975,9 @@ function buildSeed() {
       goals: 9,
       assists: 6,
       createdAt: Date.now(),
+      userId: 'user_valentine',
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_dp_2',
@@ -878,6 +994,8 @@ function buildSeed() {
       goals: 4,
       assists: 5,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_dp_3',
@@ -894,6 +1012,8 @@ function buildSeed() {
       goals: 0,
       assists: 1,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
     {
       id: 'player_dp_4',
@@ -910,44 +1030,83 @@ function buildSeed() {
       goals: 0,
       assists: 0,
       createdAt: Date.now(),
+      motmWins: 0,
+      motmNominations: 0,
     },
   ];
-
   return { leagues, tournaments, teams, matches, players, leagueId, tourId };
 }
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const seed = useMemo(() => buildSeed(), []);
-
   const [leagues] = useState<League[]>(seed.leagues);
   const [activeLeagueId, setActiveLeagueId] = useState<string>(seed.leagueId);
-
   const [tournaments, setTournaments] = useState<any[]>(seed.tournaments);
   const [teams, setTeams] = useState<Team[]>(seed.teams);
-  const [players, setPlayers] = useState<Player[]>(seed.players); // ← USE SEED PLAYERS
+  const [players, setPlayers] = useState<Player[]>(seed.players);
   const [matches, setMatches] = useState<Match[]>(seed.matches);
   const [loggedEvents, setLoggedEvents] = useState<LoggedEvent[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [transferLogs, setTransferLogs] = useState<TransferLog[]>([]);
-
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
   const [walletBalance, setWalletBalance] = useState(2500);
   const [bettingPools, setBettingPools] = useState<BettingPool[]>([]);
+  const [bettingTickets, setBettingTickets] = useState<BettingTicket[]>([]);
+  const [matchPools, setMatchPools] = useState<MatchPool[]>([]);
+  const [matchVotes, setMatchVotes] = useState<MatchVote[]>([]);
+  const [motmAwards, setMotmAwards] = useState<MotmAward[]>([]);
+  
+  const [tournamentTemplates, setTournamentTemplates] = useState<TournamentTemplate[]>([
+    {
+      id: "template_1",
+      name: "Standard 35+ Tournament",
+      description: "Default settings for over-35 weekend tournaments",
+      registrationFee: 15000,
+      ageRuleLabel: "35+",
+      minRosterSize: 11,
+      maxRosterSize: 18,
+      maxTeams: 24,
+      matchDuration: 90,
+      defaultLocation: "Springfield Sports Complex",
+      status: "ACTIVE",
+      createdAt: Date.now(),
+      createdBy: "admin",
+    },
+    {
+      id: "template_2",
+      name: "Premium 40+ League",
+      description: "Higher tier tournament with larger rosters",
+      registrationFee: 20000,
+      ageRuleLabel: "40+",
+      minRosterSize: 13,
+      maxRosterSize: 22,
+      maxTeams: 16,
+      matchDuration: 90,
+      defaultLocation: "Metro Sports Arena",
+      status: "ACTIVE",
+      createdAt: Date.now(),
+      createdBy: "admin",
+    },
+  ]);
 
+  // ========== TEAM ELIGIBILITY STATE ==========
+  const [teamEligibility, setTeamEligibility] = useState<Record<string, TeamEligibility>>({});
+  const [cardFines, setCardFines] = useState<CardFine[]>([]);
+  
   const sponsorsAds: SponsorAd[] = [
     { id: "sp1", kind: "SPONSOR", name: "Jersey Printing Co", tagline: "Same-day names & numbers" },
     { id: "sp2", kind: "AD", name: "Local Sports Bar", tagline: "Watch all NVT matches here!" },
     { id: "sp3", kind: "SPONSOR", name: "Athletic Gear Shop", tagline: "20% off for NVT players" },
   ];
-
+  
   const [currentUser, setCurrentUser] = useState<User>({
     id: "user_demo",
     name: "Demo User",
     role: "LEAGUE_ADMIN",
     subscription: "FREE",
-    teamId: "team_bvfc",
+    teamId: null,
   });
 
   const setRole = (role: Role) => {
@@ -973,7 +1132,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const can: AppStore["can"] = (permission, context?) => {
     const role = currentUser.role;
     const isPro = activeLeague?.plan === "Pro";
-
+    
     if ((permission === "PAYMENTS" || permission === "MANAGE_TOURNAMENTS") && currentUser.subscription !== "PRO") {
       if (role !== "LEAGUE_ADMIN") return false;
     }
@@ -1052,6 +1211,553 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return bettingPools.find((p) => p.matchId === matchId);
   };
 
+  const placeBettingTicket: AppStore["placeBettingTicket"] = (ticketData) => {
+    const ticket: BettingTicket = {
+      ...ticketData,
+      id: uid("ticket"),
+      placedAt: Date.now(),
+      status: "PENDING",
+    };
+    setBettingTickets((prev) => [...prev, ticket]);
+
+    setMatchPools((prev) => {
+      const existingPool = prev.find(p => p.matchId === ticket.matchId);
+      
+      if (existingPool) {
+        return prev.map(p =>
+          p.matchId === ticket.matchId
+            ? {
+                ...p,
+                totalPotCents: p.totalPotCents + ticket.wagerCents,
+                ticketCount: p.ticketCount + 1,
+              }
+            : p
+        );
+      } else {
+        return [
+          ...prev,
+          {
+            matchId: ticket.matchId,
+            totalPotCents: ticket.wagerCents,
+            ticketCount: 1,
+            status: "OPEN" as const,
+          },
+        ];
+      }
+    });
+
+    return ticket.id;
+  };
+
+  const getMatchPool: AppStore["getMatchPool"] = (matchId) => {
+    return matchPools.find(p => p.matchId === matchId) || null;
+  };
+
+  const canUserBet: AppStore["canUserBet"] = (matchId, userId) => {
+    const match = matches.find(m => m.id === matchId);
+    if (!match) {
+      return { canBet: false, reason: "Match not found" };
+    }
+
+    if (match.isLive || match.status === "FINAL") {
+      return { canBet: false, reason: "Betting closed - match started" };
+    }
+
+    const userPlayer = players.find(p => p.userId === userId);
+    if (userPlayer && (userPlayer.teamId === match.homeTeamId || userPlayer.teamId === match.awayTeamId)) {
+      return { canBet: false, reason: "Players cannot bet on their own matches" };
+    }
+
+    if (currentUser.role === "REFEREE" || currentUser.role === "TOURNAMENT_ADMIN") {
+      return { canBet: false, reason: "Match officials cannot bet on matches" };
+    }
+
+    return { canBet: true };
+  };
+
+  const settleMatchPool: AppStore["settleMatchPool"] = (matchId) => {
+    const match = matches.find(m => m.id === matchId);
+    if (!match || match.status !== "FINAL") return;
+    
+    const pool = matchPools.find(p => p.matchId === matchId);
+    if (!pool || pool.status === "SETTLED") return;
+
+    const events = loggedEvents.filter(e => e.matchId === matchId && e.type === "GOAL");
+    const homeGoals = events.filter(e => e.teamId === match.homeTeamId).length;
+    const awayGoals = events.filter(e => e.teamId === match.awayTeamId).length;
+    const totalGoals = homeGoals + awayGoals;
+
+    const actualWinner: "HOME" | "DRAW" | "AWAY" = 
+      homeGoals > awayGoals ? "HOME" : 
+      homeGoals < awayGoals ? "AWAY" : "DRAW";
+
+    const actualOverUnder: "OVER" | "UNDER" = totalGoals > 2.5 ? "OVER" : "UNDER";
+    const actualBTTS: "YES" | "NO" = (homeGoals > 0 && awayGoals > 0) ? "YES" : "NO";
+
+    const matchTickets = bettingTickets.filter(t => t.matchId === matchId);
+
+    const perfectWinners = matchTickets.filter(t => 
+      t.winner === actualWinner &&
+      t.overUnder === actualOverUnder &&
+      t.btts === actualBTTS
+    );
+
+    let payoutCents = 0;
+
+    if (perfectWinners.length > 0) {
+      const potAfterRake = Math.min(pool.totalPotCents * 0.9, 50000);
+      const payoutPerWinner = Math.floor(potAfterRake / perfectWinners.length);
+      payoutCents = potAfterRake;
+      
+      setBettingTickets((prev) =>
+        prev.map((ticket) => {
+          if (perfectWinners.find(w => w.id === ticket.id)) {
+            addToWallet(payoutPerWinner);
+            return { ...ticket, status: "WON" as const };
+          } else if (ticket.matchId === matchId) {
+            return { ...ticket, status: "LOST" as const };
+          }
+          return ticket;
+        })
+      );
+    } else {
+      const scored = matchTickets.map(ticket => {
+        let score = 0;
+        if (ticket.winner === actualWinner) score += 1;
+        if (ticket.overUnder === actualOverUnder) score += 1;
+        if (ticket.btts === actualBTTS) score += 1;
+        return { ticket, score };
+      });
+      
+      const maxScore = Math.max(...scored.map(s => s.score));
+      const closestWinners = scored.filter(s => s.score === maxScore).map(s => s.ticket);
+      
+      if (closestWinners.length > 0) {
+        const potAfterRake = Math.min(pool.totalPotCents * 0.9, 50000);
+        const payoutPerWinner = Math.floor(potAfterRake / closestWinners.length);
+        payoutCents = potAfterRake;
+        
+        setBettingTickets((prev) =>
+          prev.map((ticket) => {
+            if (closestWinners.find(w => w.id === ticket.id)) {
+              addToWallet(payoutPerWinner);
+              return { ...ticket, status: "CLOSEST" as const };
+            } else if (ticket.matchId === matchId) {
+              return { ...ticket, status: "LOST" as const };
+            }
+            return ticket;
+          })
+        );
+      }
+    }
+
+    setMatchPools((prev) =>
+      prev.map(p => {
+        if (p.matchId === matchId) {
+          return {
+            ...p,
+            status: "SETTLED" as const,
+            actualWinner,
+            actualOverUnder,
+            actualBTTS,
+            totalGoals,
+            settledAt: Date.now(),
+            payoutCents,
+          };
+        }
+        return p;
+      })
+    );
+  };
+
+  const castMotmVote = (matchId: string, playerId: string) => {
+    const match = matches.find(m => m.id === matchId);
+    if (!match || !match.isLive) {
+      return { ok: false, reason: "Can only vote during live matches" };
+    }
+    
+    const player = players.find(p => p.id === playerId);
+    if (!player) {
+      return { ok: false, reason: "Player not found" };
+    }
+
+    const existingVote = matchVotes.find(
+      v => v.matchId === matchId && v.userId === currentUser.id
+    );
+
+    if (existingVote) {
+      setMatchVotes(prev =>
+        prev.map(v =>
+          v.id === existingVote.id
+            ? {
+                ...v,
+                playerId,
+                playerName: player.fullName,
+                teamId: player.teamId,
+                votedAt: Date.now(),
+              }
+            : v
+        )
+      );
+    } else {
+      const newVote: MatchVote = {
+        id: uid("vote"),
+        matchId,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        playerId,
+        playerName: player.fullName,
+        teamId: player.teamId,
+        votedAt: Date.now(),
+      };
+      setMatchVotes(prev => [...prev, newVote]);
+    }
+
+    return { ok: true };
+  };
+
+  const getUserMotmVote = (matchId: string, userId: string): MatchVote | null => {
+    return matchVotes.find(v => v.matchId === matchId && v.userId === userId) || null;
+  };
+
+  const getMotmLeaderboard = (matchId: string) => {
+    const votes = matchVotes.filter(v => v.matchId === matchId);
+    if (votes.length === 0) return [];
+
+    const voteCounts = votes.reduce((acc, vote) => {
+      if (!acc[vote.playerId]) {
+        acc[vote.playerId] = {
+          playerId: vote.playerId,
+          playerName: vote.playerName,
+          teamId: vote.teamId,
+          count: 0,
+        };
+      }
+      acc[vote.playerId].count += 1;
+      return acc;
+    }, {} as Record<string, { playerId: string; playerName: string; teamId: string; count: number }>);
+
+    const leaderboard = Object.values(voteCounts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    return leaderboard;
+  };
+
+  const determineMotm = (matchId: string) => {
+    const match = matches.find(m => m.id === matchId);
+    if (!match || match.status !== "FINAL") return;
+    if (motmAwards.find(a => a.matchId === matchId)) return;
+
+    const votes = matchVotes.filter(v => v.matchId === matchId);
+
+    if (votes.length === 0) {
+      return;
+    }
+
+    const voteCounts = votes.reduce((acc, vote) => {
+      if (!acc[vote.playerId]) {
+        acc[vote.playerId] = {
+          playerId: vote.playerId,
+          playerName: vote.playerName,
+          teamId: vote.teamId,
+          count: 0,
+        };
+      }
+      acc[vote.playerId].count += 1;
+      return acc;
+    }, {} as Record<string, { playerId: string; playerName: string; teamId: string; count: number }>);
+
+    const candidates = Object.values(voteCounts);
+    const winner = candidates.reduce((max, curr) => 
+      curr.count > max.count ? curr : max
+    );
+
+    const team = teams.find(t => t.id === winner.teamId);
+    const bonusCents = 2500;
+
+    const award: MotmAward = {
+      matchId,
+      winnerId: winner.playerId,
+      winnerName: winner.playerName,
+      teamId: winner.teamId,
+      teamName: team?.name || "Unknown Team",
+      voteCount: winner.count,
+      totalVotes: votes.length,
+      votePercentage: Math.round((winner.count / votes.length) * 100),
+      awardedAt: Date.now(),
+      bonusCents,
+    };
+
+    setMotmAwards(prev => [...prev, award]);
+
+    setPlayers(prev =>
+      prev.map(p =>
+        p.id === winner.playerId
+          ? {
+              ...p,
+              motmWins: (p.motmWins || 0) + 1,
+              motmNominations: (p.motmNominations || 0) + 1,
+            }
+          : p
+      )
+    );
+
+    console.log(`🏆 MOTM: ${winner.playerName} won $25 with ${winner.count} votes!`);
+  };
+
+  const getMotmAward = (matchId: string): MotmAward | null => {
+    return motmAwards.find(a => a.matchId === matchId) || null;
+  };
+
+  const createTournamentTemplate = (templateData: Omit<TournamentTemplate, "id" | "createdAt" | "createdBy">) => {
+    const newTemplate: TournamentTemplate = {
+      ...templateData,
+      id: uid("template"),
+      createdAt: Date.now(),
+      createdBy: currentUser.id,
+    };
+    
+    setTournamentTemplates((prev) => [...prev, newTemplate]);
+    return newTemplate.id;
+  };
+
+  const updateTournamentTemplate = (templateId: string, updates: Partial<TournamentTemplate>) => {
+    setTournamentTemplates((prev) =>
+      prev.map((template) =>
+        template.id === templateId
+          ? { ...template, ...updates }
+          : template
+      )
+    );
+  };
+
+  const deleteTournamentTemplate = (templateId: string) => {
+    setTournamentTemplates((prev) => prev.filter((t) => t.id !== templateId));
+  };
+
+  const getTournamentTemplate = (templateId: string): TournamentTemplate | undefined => {
+    return tournamentTemplates.find((t) => t.id === templateId);
+  };
+
+  const archiveTournamentTemplate = (templateId: string) => {
+    updateTournamentTemplate(templateId, { status: "ARCHIVED" });
+  };
+
+  const restoreTournamentTemplate = (templateId: string) => {
+    updateTournamentTemplate(templateId, { status: "ACTIVE" });
+  };
+
+  // ========== TEAM ELIGIBILITY METHODS ==========
+  const getTeamEligibility = (teamId: string): TeamEligibility => {
+    const existing = teamEligibility[teamId];
+    if (existing?.adminOverride) {
+      return existing;
+    }
+
+    const teamFines = cardFines.filter(
+      f => f.teamId === teamId && f.status === "PENDING"
+    );
+
+    const outstandingAmount = teamFines.reduce((sum, f) => sum + f.amount, 0);
+    const isEligible = teamFines.length === 0 || (existing?.adminOverride ?? false);
+
+    return {
+      teamId,
+      isEligible,
+      blockedReason: !isEligible ? `${teamFines.length} unpaid card fine${teamFines.length > 1 ? 's' : ''}` : undefined,
+      outstandingFines: outstandingAmount,
+      outstandingFineCount: teamFines.length,
+      adminOverride: existing?.adminOverride ?? false,
+      overrideBy: existing?.overrideBy,
+      overrideAt: existing?.overrideAt,
+      overrideReason: existing?.overrideReason,
+    };
+  };
+
+  const overrideTeamEligibility = (teamId: string, reason: string): { ok: boolean; message: string } => {
+    if (!can("MANAGE_TOURNAMENTS")) {
+      return { ok: false, message: "Only league admins can override eligibility" };
+    }
+
+    const eligibility = getTeamEligibility(teamId);
+    
+    if (eligibility.isEligible && !eligibility.adminOverride) {
+      return { ok: false, message: "Team is already eligible" };
+    }
+
+    setTeamEligibility(prev => ({
+      ...prev,
+      [teamId]: {
+        ...eligibility,
+        isEligible: true,
+        adminOverride: true,
+        overrideBy: currentUser.name,
+        overrideAt: Date.now(),
+        overrideReason: reason,
+      },
+    }));
+
+    return { 
+      ok: true, 
+      message: `Team cleared to play. Override expires after next match or when fines are paid.` 
+    };
+  };
+
+  const removeTeamEligibilityOverride = (teamId: string): { ok: boolean } => {
+    if (!can("MANAGE_TOURNAMENTS")) {
+      return { ok: false };
+    }
+
+    setTeamEligibility(prev => {
+      const updated = { ...prev };
+      delete updated[teamId];
+      return updated;
+    });
+
+    return { ok: true };
+  };
+
+  const createCardFine = (input: {
+    teamId: string;
+    playerId: string;
+    playerName: string;
+    cardType: "YELLOW" | "RED";
+    matchId: string;
+  }): string => {
+    const amount = input.cardType === "YELLOW" ? 2500 : 5000;
+    const dueDate = Date.now() + 7 * 24 * 60 * 60 * 1000;
+
+    const fine: CardFine = {
+      id: uid("fine"),
+      teamId: input.teamId,
+      playerId: input.playerId,
+      playerName: input.playerName,
+      cardType: input.cardType,
+      matchId: input.matchId,
+      amount,
+      status: "PENDING",
+      issuedAt: Date.now(),
+      dueDate,
+    };
+
+    setCardFines(prev => [...prev, fine]);
+
+    addPendingPayment({
+      id: fine.id,
+      type: "CARD_FINE",
+      amount,
+      status: "PENDING",
+      createdAt: Date.now(),
+      dueDate,
+      teamId: input.teamId,
+      cardType: input.cardType,
+      playerName: input.playerName,
+    });
+
+    if (teamEligibility[input.teamId]?.adminOverride) {
+      removeTeamEligibilityOverride(input.teamId);
+    }
+
+    return fine.id;
+  };
+
+  const payCardFine = (fineId: string): { ok: boolean; message: string } => {
+    const fine = cardFines.find(f => f.id === fineId);
+    if (!fine) {
+      return { ok: false, message: "Fine not found" };
+    }
+
+    if (fine.status === "PAID") {
+      return { ok: false, message: "Fine already paid" };
+    }
+
+    if (walletBalance < fine.amount) {
+      return { 
+        ok: false, 
+        message: `Insufficient funds. Need $${(fine.amount / 100).toFixed(2)}` 
+      };
+    }
+
+    deductFromWallet(fine.amount);
+
+    setCardFines(prev =>
+      prev.map(f =>
+        f.id === fineId
+          ? { ...f, status: "PAID" as const, paidAt: Date.now() }
+          : f
+      )
+    );
+
+    markPaymentPaid(fineId);
+
+    const teamFines = cardFines.filter(
+      f => f.teamId === fine.teamId && f.status === "PENDING" && f.id !== fineId
+    );
+    if (teamFines.length === 0 && teamEligibility[fine.teamId]?.adminOverride) {
+      removeTeamEligibilityOverride(fine.teamId);
+    }
+
+    return { ok: true, message: "Fine paid successfully" };
+  };
+
+  const getTeamFines = (teamId: string): CardFine[] => {
+    return cardFines.filter(f => f.teamId === teamId);
+  };
+
+  const getTeamUnpaidFines = (teamId: string): CardFine[] => {
+    return cardFines.filter(f => f.teamId === teamId && f.status === "PENDING");
+  };
+
+  const canTeamPlayMatch = (teamId: string): { canPlay: boolean; reason?: string } => {
+    const eligibility = getTeamEligibility(teamId);
+    
+    if (eligibility.isEligible) {
+      return { canPlay: true };
+    }
+
+    return {
+      canPlay: false,
+      reason: eligibility.blockedReason,
+    };
+  };
+
+  const validateMatchEligibility = (matchId: string): {
+    canStart: boolean;
+    blockedTeams: string[];
+    message?: string;
+  } => {
+    const match = matches.find(m => m.id === matchId);
+    if (!match) {
+      return { canStart: false, blockedTeams: [], message: "Match not found" };
+    }
+
+    const homeEligibility = canTeamPlayMatch(match.homeTeamId);
+    const awayEligibility = canTeamPlayMatch(match.awayTeamId);
+
+    const blockedTeams: string[] = [];
+    
+    if (!homeEligibility.canPlay) {
+      const homeTeam = teams.find(t => t.id === match.homeTeamId);
+      blockedTeams.push(homeTeam?.name || "Home Team");
+    }
+    
+    if (!awayEligibility.canPlay) {
+      const awayTeam = teams.find(t => t.id === match.awayTeamId);
+      blockedTeams.push(awayTeam?.name || "Away Team");
+    }
+
+    if (blockedTeams.length > 0) {
+      return {
+        canStart: false,
+        blockedTeams,
+        message: `${blockedTeams.join(", ")} ${blockedTeams.length > 1 ? "have" : "has"} outstanding fines. Payment required or admin override needed.`,
+      };
+    }
+
+    return { canStart: true, blockedTeams: [] };
+  };
+
   const getTeamsForTournament = (tournamentId: string) => {
     const tId = String(tournamentId ?? "");
     return (teams ?? []).filter((t) => String(t.tournamentId ?? "") === tId);
@@ -1074,7 +1780,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     
     const ageRule = input.ageRule ?? "O35";
     const ageRuleLabel = input.ageRuleLabel ?? "35+";
-    
+
     setTournaments((prev) => [
       ...(prev ?? []),
       {
@@ -1088,8 +1794,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         ageRule,
         ageRuleLabel,
         ageBand: ageRuleLabel,
+        minRosterSize: input.minRosterSize ?? 11,
+        maxRosterSize: input.maxRosterSize ?? 18,
+        maxTeams: input.maxTeams ?? 24,
         status: input.status ?? "Open",
         rosterLocked: false,
+        durationSec: input.durationSec ?? (90 * 60),
         createdAt: Date.now(),
       },
     ]);
@@ -1100,7 +1810,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const name = String(input?.name ?? "").trim();
     const id = uid("team");
     if (!name) return id;
-
+    
     setTeams((prev) => [
       ...(prev ?? []),
       {
@@ -1128,7 +1838,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     fieldLocation?: FieldLocation;
   }): string => {
     const matchId = uid("match");
-    
     const newMatch: Match = {
       id: matchId,
       leagueId: matchData.leagueId,
@@ -1155,25 +1864,24 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     };
 
     setMatches((prev) => [...(prev ?? []), newMatch]);
-    
+
     return matchId;
   };
 
   const addPlayer = (input: AddPlayerInput) => {
     const fullName = String(input?.fullName ?? "").trim();
     const id = uid("player");
-    
     if (!fullName) {
       return { ok: false, reason: "Player name is required", id };
     }
 
     const tournamentId = input.tournamentId ?? null;
     const tournament = tournamentId ? tournaments.find((t: any) => t.id === tournamentId) : null;
-    
+
     if (tournament?.rosterLocked) {
       return { ok: false, reason: "Roster is locked. Cannot add players.", id };
     }
-    
+
     if (tournament && input.dob) {
       const age = calcAge(input.dob);
       const ageRule = tournament.ageRule ?? "O35";
@@ -1205,6 +1913,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         totalCheckIns: 0,
         checkInHistory: [],
         createdAt: Date.now(),
+        userId: input.userId,
+        motmWins: 0,
+        motmNominations: 0,
       },
     ]);
 
@@ -1237,7 +1948,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const teamId = String(input?.teamId ?? "");
     const body = String(input?.body ?? "").trim();
     if (!teamId || !body) return;
-
+    
     setMessages((prev) => [
       ...(prev ?? []),
       {
@@ -1255,7 +1966,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     const mId = String(matchId ?? "");
     const tId = String(teamId ?? "");
     if (!mId || !tId) return;
-
+    
     setLoggedEvents((prev) => [
       ...(prev ?? []),
       {
@@ -1277,7 +1988,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const createPaymentIntent: AppStore["createPaymentIntent"] = ({ type, amount, meta }) => {
     const id = uid("pay");
     const safeAmount = Number(amount ?? 0);
-
+    
     setPayments((prev) => [
       ...(prev ?? []),
       {
@@ -1322,7 +2033,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const toggleVerifyPlayer = (playerId: string): { ok: boolean; reason?: string } => {
     const id = String(playerId ?? "");
     const player = players.find((p) => p.id === id);
-    
     if (!player) {
       return { ok: false, reason: "Player not found" };
     }
@@ -1344,7 +2054,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const updatePlayerVerification = (input: UpdatePlayerVerificationInput): { ok: boolean; reason?: string } => {
     const player = players.find((p) => p.id === input.playerId);
-    
     if (!player) {
       return { ok: false, reason: "Player not found" };
     }
@@ -1385,7 +2094,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const recordCheckIn = (input: GameDayCheckInInput): { ok: boolean; reason?: string } => {
     const player = players.find((p) => p.id === input.playerId);
-    
     if (!player) {
       return { ok: false, reason: "Player not found" };
     }
@@ -1461,7 +2169,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }) => {
     const tournament = tournaments.find((t: any) => t.id === input.tournamentId);
     if (!tournament) return;
-
+    
     const teamId = createTeam({
       name: input.teamName,
       repName: input.repName,
@@ -1480,7 +2188,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }): { ok: boolean; reason?: string } => {
     const player = players.find((p) => p.id === input.playerId);
     const toTeam = teams.find((t) => t.id === input.toTeamId);
-
     if (!player) {
       return { ok: false, reason: "Player not found" };
     }
@@ -1523,6 +2230,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setMatches((prev) =>
       prev.map((m: any) => (m.id === matchId ? { ...m, isLive, status: isLive ? "LIVE" as MatchStatus : m.status } : m))
     );
+    
+    if (isLive) {
+      setMatchPools((prev) =>
+        prev.map(p => p.matchId === matchId ? { ...p, status: "LOCKED" as const } : p)
+      );
+    }
   };
 
   const tickMatch = (matchId: string, seconds: number) => {
@@ -1545,29 +2258,60 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const logMatchEvent = (input: { matchId: string; type: LoggedEventType; teamId: string }) => {
+  // ENHANCED logMatchEvent with auto-fine creation
+  const logMatchEvent = (input: { matchId: string; type: LoggedEventType; teamId: string; playerId?: string }) => {
     const match = matches.find((m: any) => m.id === input.matchId);
     const clockSec = match?.clockSec ?? 0;
     const minute = Math.min(90, Math.floor(clockSec / 60));
-
+    
     logEvent({
       matchId: input.matchId,
       type: input.type,
       teamId: input.teamId,
+      playerId: input.playerId || null,
       minute,
     });
+
+    // Create fine for yellow or red card
+    if ((input.type === "YELLOW" || input.type === "RED") && input.playerId) {
+      const player = players.find(p => p.id === input.playerId);
+      if (player) {
+        createCardFine({
+          teamId: input.teamId,
+          playerId: input.playerId,
+          playerName: player.fullName,
+          cardType: input.type === "YELLOW" ? "YELLOW" : "RED",
+          matchId: input.matchId,
+        });
+      }
+    }
   };
 
   const placeBet = (input: { matchId: string; pick: string; wagerCents: number; odds: number }) => {
     console.log("Bet placed:", input);
   };
 
+  useEffect(() => {
+    matches.forEach(match => {
+      if (match.status === "FINAL") {
+        const pool = matchPools.find(p => p.matchId === match.id);
+        if (pool && pool.status !== "SETTLED") {
+          setTimeout(() => settleMatchPool(match.id), 2000);
+        }
+
+        const award = motmAwards.find(a => a.matchId === match.id);
+        if (!award) {
+          setTimeout(() => determineMotm(match.id), 3000);
+        }
+      }
+    });
+  }, [matches.map(m => m.status).join(',')]);
+
   const value: AppStore = {
     currentUser,
     setRole,
     setSubscription,
     can,
-
     leagues,
     activeLeagueId,
     activeLeague,
@@ -1596,6 +2340,42 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     bettingPools,
     addBetToPool,
     getPoolForMatch,
+
+    bettingTickets,
+    matchPools,
+    placeBettingTicket,
+    getMatchPool,
+    canUserBet,
+    settleMatchPool,
+
+    matchVotes,
+    motmAwards,
+    castMotmVote,
+    getUserMotmVote,
+    getMotmLeaderboard,
+    determineMotm,
+    getMotmAward,
+
+    tournamentTemplates,
+    createTournamentTemplate,
+    updateTournamentTemplate,
+    deleteTournamentTemplate,
+    getTournamentTemplate,
+    archiveTournamentTemplate,
+    restoreTournamentTemplate,
+
+    // Team Eligibility & Fines
+    teamEligibility,
+    cardFines,
+    getTeamEligibility,
+    overrideTeamEligibility,
+    removeTeamEligibilityOverride,
+    createCardFine,
+    payCardFine,
+    getTeamFines,
+    getTeamUnpaidFines,
+    canTeamPlayMatch,
+    validateMatchEligibility,
 
     getTeamsForTournament,
     getPlayersForTeam,
@@ -1638,7 +2418,9 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAppStore() {
-  const ctx = useContext(AppStoreContext);
-  if (!ctx) throw new Error("useAppStore must be used within AppStoreProvider");
-  return ctx;
+  const context = useContext(AppStoreContext);
+  if (!context) {
+    throw new Error("useAppStore must be used within AppStoreProvider");
+  }
+  return context;
 }

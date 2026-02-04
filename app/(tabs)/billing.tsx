@@ -1,6 +1,6 @@
-// app/(tabs)/billing.tsx - FULL FEATURED VERSION
+// app/(tabs)/billing.tsx - COMPLETE WITH CARD FINES
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAppStore } from "../../src/state/AppStore";
 
@@ -13,6 +13,9 @@ export default function BillingScreen() {
     addToWallet,
     pendingPayments = [],
     markPaymentPaid,
+    teams = [],
+    cardFines = [],
+    payCardFine,
   } = store;
 
   const [depositAmount, setDepositAmount] = useState("");
@@ -21,6 +24,19 @@ export default function BillingScreen() {
   const formatMoney = (cents: number) => {
     return `$${(cents / 100).toFixed(2)}`;
   };
+
+  // Get user's team unpaid fines
+  const userTeamFines = useMemo(() => {
+    if (currentUser?.teamId) {
+      return cardFines.filter((f: any) => f.teamId === currentUser.teamId && f.status === "PENDING");
+    }
+    return [];
+  }, [cardFines, currentUser?.teamId]);
+
+  // Get all pending fines (for admins)
+  const allPendingFines = useMemo(() => {
+    return cardFines.filter((f: any) => f.status === "PENDING");
+  }, [cardFines]);
 
   const myPendingPayments = pendingPayments.filter((p: any) => {
     if (p.status !== "PENDING") return false;
@@ -155,6 +171,67 @@ export default function BillingScreen() {
     );
   };
 
+  const handlePayFine = (fineId: string, amount: number) => {
+    Alert.alert(
+      "Pay Card Fine",
+      `Pay ${formatMoney(amount)} from your wallet?\n\nCurrent Balance: ${formatMoney(walletBalance)}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Pay Now",
+          onPress: () => {
+            if (typeof payCardFine === 'function') {
+              const result = payCardFine(fineId);
+              if (result.ok) {
+                Alert.alert("✓ Paid!", result.message);
+              } else {
+                Alert.alert("Payment Failed", result.message);
+              }
+            } else {
+              Alert.alert("Error", "Payment system unavailable");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handlePayAllFines = () => {
+    const totalAmount = userTeamFines.reduce((sum: number, f: any) => sum + f.amount, 0);
+    
+    Alert.alert(
+      "Pay All Fines",
+      `Pay all ${userTeamFines.length} fine${userTeamFines.length > 1 ? 's' : ''} (${formatMoney(totalAmount)})?\n\nCurrent Balance: ${formatMoney(walletBalance)}`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Pay All",
+          onPress: () => {
+            if (typeof payCardFine !== 'function') {
+              Alert.alert("Error", "Payment system unavailable");
+              return;
+            }
+
+            let successCount = 0;
+            let failCount = 0;
+
+            userTeamFines.forEach((fine: any) => {
+              const result = payCardFine(fine.id);
+              if (result.ok) successCount++;
+              else failCount++;
+            });
+
+            if (failCount === 0) {
+              Alert.alert("✓ All Paid!", `Successfully paid ${successCount} fine${successCount > 1 ? 's' : ''}`);
+            } else {
+              Alert.alert("Partial Payment", `Paid ${successCount}, failed ${failCount}. Check wallet balance.`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const getPaymentTitle = (payment: any) => {
     switch (payment.type) {
       case "TOURNAMENT_REGISTRATION":
@@ -201,6 +278,181 @@ export default function BillingScreen() {
         💳 Billing & Payments
       </Text>
 
+      {/* ========== URGENT CARD FINES WARNING ========== */}
+      {userTeamFines.length > 0 && (
+        <View style={{
+          backgroundColor: "rgba(255,59,48,0.1)",
+          borderRadius: 16,
+          padding: 16,
+          borderWidth: 2,
+          borderColor: "#FF3B30",
+        }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <Text style={{ fontSize: 32 }}>⚠️</Text>
+            <Text style={{ color: "#FF3B30", fontWeight: "900", fontSize: 18, flex: 1 }}>
+              URGENT: Card Fines Due
+            </Text>
+          </View>
+          <Text style={{ color: "#EAF2FF", lineHeight: 20, marginBottom: 12 }}>
+            Your team has {userTeamFines.length} unpaid card fine{userTeamFines.length > 1 ? 's' : ''}. Your team is blocked from matches until fines are paid.
+          </Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity
+              onPress={handlePayAllFines}
+              style={{
+                flex: 1,
+                backgroundColor: "#FF3B30",
+                borderRadius: 10,
+                paddingVertical: 12,
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: "#FFFFFF", fontWeight: "900" }}>
+                Pay All Fines
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                const team = teams.find((t: any) => t.id === currentUser.teamId);
+                if (team) {
+                  router.push(`/teams/${team.id}/eligibility` as any);
+                }
+              }}
+              style={{
+                backgroundColor: "#0A2238",
+                borderRadius: 10,
+                paddingVertical: 12,
+                paddingHorizontal: 16,
+                justifyContent: "center",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.1)",
+              }}
+            >
+              <Text style={{ color: "#22C6D2", fontWeight: "900" }}>Details</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ========== CARD FINES SECTION ========== */}
+      {(userTeamFines.length > 0 || (currentUser?.role === "LEAGUE_ADMIN" && allPendingFines.length > 0)) && (
+        <View style={{ gap: 12 }}>
+          <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>
+            Card Fines {userTeamFines.length > 0 ? `(${userTeamFines.length})` : ""}
+          </Text>
+
+          <View style={{ gap: 12 }}>
+            {(userTeamFines.length > 0 ? userTeamFines : allPendingFines).map((fine: any) => {
+              const team = teams.find((t: any) => t.id === fine.teamId);
+              const isOverdue = Date.now() > fine.dueDate;
+              
+              return (
+                <View
+                  key={fine.id}
+                  style={{
+                    backgroundColor: "#0A2238",
+                    borderRadius: 16,
+                    padding: 16,
+                    borderWidth: 2,
+                    borderColor: isOverdue ? "#FF3B30" : "rgba(255,255,255,0.1)",
+                  }}
+                >
+                  {/* Card Type Badge */}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                    <View style={{
+                      backgroundColor: fine.cardType === "YELLOW" ? "#F2D100" : "#FF3B30",
+                      width: 32,
+                      height: 40,
+                      borderRadius: 4,
+                    }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
+                        {fine.cardType} Card Fine
+                      </Text>
+                      <Text style={{ color: "#9FB3C8", fontSize: 13 }}>
+                        {fine.playerName} • {team?.name}
+                      </Text>
+                    </View>
+                    <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 20 }}>
+                      {formatMoney(fine.amount)}
+                    </Text>
+                  </View>
+
+                  {/* Due Date */}
+                  <View style={{
+                    backgroundColor: isOverdue ? "rgba(255,59,48,0.1)" : "rgba(34,198,210,0.1)",
+                    borderRadius: 10,
+                    padding: 10,
+                    marginBottom: 12,
+                  }}>
+                    <Text style={{ color: isOverdue ? "#FF3B30" : "#22C6D2", fontSize: 13 }}>
+                      {isOverdue ? "⚠️ OVERDUE" : "Due"}: {new Date(fine.dueDate).toLocaleDateString()}
+                    </Text>
+                    {isOverdue && (
+                      <Text style={{ color: "#FF3B30", fontSize: 12, marginTop: 4 }}>
+                        Team is blocked from matches
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Action Buttons */}
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <TouchableOpacity
+                      onPress={() => handlePayFine(fine.id, fine.amount)}
+                      style={{
+                        flex: 1,
+                        backgroundColor: "#34C759",
+                        borderRadius: 10,
+                        paddingVertical: 12,
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text style={{ color: "#061A2B", fontWeight: "900" }}>
+                        Pay Now
+                      </Text>
+                    </TouchableOpacity>
+
+                    {team && (
+                      <TouchableOpacity
+                        onPress={() => router.push(`/teams/${team.id}/eligibility` as any)}
+                        style={{
+                          backgroundColor: "#0B2842",
+                          borderRadius: 10,
+                          paddingVertical: 12,
+                          paddingHorizontal: 16,
+                          justifyContent: "center",
+                          borderWidth: 1,
+                          borderColor: "rgba(255,255,255,0.1)",
+                        }}
+                      >
+                        <Text style={{ color: "#22C6D2", fontWeight: "900" }}>Details</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+
+          {/* Card Fine Policy Info */}
+          <View style={{
+            backgroundColor: "rgba(34,198,210,0.1)",
+            borderRadius: 12,
+            padding: 14,
+            borderWidth: 1,
+            borderColor: "rgba(34,198,210,0.3)",
+          }}>
+            <Text style={{ color: "#22C6D2", fontWeight: "900", marginBottom: 6 }}>
+              💡 Card Fine Policy
+            </Text>
+            <Text style={{ color: "#EAF2FF", fontSize: 13, lineHeight: 18 }}>
+              Yellow cards: $25 • Red cards: $50 • Due in 7 days • Teams blocked from matches if unpaid
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Wallet Balance */}
       <View
         style={{
           backgroundColor: "#0A2238",
@@ -215,7 +467,7 @@ export default function BillingScreen() {
           {formatMoney(walletBalance || 0)}
         </Text>
         <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
-          Available for betting
+          Available for betting and fine payments
         </Text>
       </View>
 
@@ -324,7 +576,7 @@ export default function BillingScreen() {
       {myPendingPayments.length > 0 && (
         <View style={{ gap: 10, marginTop: 8 }}>
           <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 18 }}>
-            ⚠️ Pending Payments ({myPendingPayments.length})
+            ⚠️ Other Pending Payments ({myPendingPayments.length})
           </Text>
           
           {myPendingPayments.map((payment: any) => (

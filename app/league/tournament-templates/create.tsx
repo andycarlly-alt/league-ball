@@ -1,39 +1,36 @@
-// app/tournaments/create.tsx - ENHANCED WITH TEMPLATE SUPPORT
+// app/league/tournament-templates/create.tsx - CREATE TOURNAMENT TEMPLATE
 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useAppStore } from "../../src/state/AppStore";
+import { useAppStore } from "../../../src/state/AppStore";
 
-export default function CreateTournamentScreen() {
+export default function CreateTemplateScreen() {
   const router = useRouter();
-  const { template: templateId } = useLocalSearchParams<{ template?: string }>();
+  const { clone } = useLocalSearchParams<{ clone?: string }>();
   
   const {
-    createTournament,
-    activeLeagueId,
-    getTournamentTemplate,
     tournamentTemplates,
+    createTournamentTemplate,
     can,
   } = useAppStore() as any;
 
-  const selectedTemplate = useMemo(
-    () => templateId ? getTournamentTemplate(templateId) : null,
-    [templateId, tournamentTemplates]
+  const cloneTemplate = useMemo(
+    () => clone ? (tournamentTemplates || []).find((t: any) => t.id === clone) : null,
+    [clone, tournamentTemplates]
   );
 
-  const [name, setName] = useState("");
-  const [location, setLocation] = useState(selectedTemplate?.defaultLocation || "");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [templateName, setTemplateName] = useState(cloneTemplate ? `${cloneTemplate.name} (Copy)` : "");
+  const [description, setDescription] = useState(cloneTemplate?.description || "");
   const [registrationFee, setRegistrationFee] = useState(
-    selectedTemplate ? String((selectedTemplate.registrationFee || 15000) / 100) : "150"
+    cloneTemplate ? String((cloneTemplate.registrationFee || 15000) / 100) : "150"
   );
-  const [ageRuleLabel, setAgeRuleLabel] = useState(selectedTemplate?.ageRuleLabel || "35+");
-  const [minRosterSize, setMinRosterSize] = useState(String(selectedTemplate?.minRosterSize || 11));
-  const [maxRosterSize, setMaxRosterSize] = useState(String(selectedTemplate?.maxRosterSize || 18));
-  const [maxTeams, setMaxTeams] = useState(String(selectedTemplate?.maxTeams || 24));
-  const [matchDuration, setMatchDuration] = useState(String(selectedTemplate?.matchDuration || 90));
+  const [ageRuleLabel, setAgeRuleLabel] = useState(cloneTemplate?.ageRuleLabel || "35+");
+  const [minRosterSize, setMinRosterSize] = useState(String(cloneTemplate?.minRosterSize || 11));
+  const [maxRosterSize, setMaxRosterSize] = useState(String(cloneTemplate?.maxRosterSize || 18));
+  const [maxTeams, setMaxTeams] = useState(String(cloneTemplate?.maxTeams || 24));
+  const [matchDuration, setMatchDuration] = useState(String(cloneTemplate?.matchDuration || 90));
+  const [defaultLocation, setDefaultLocation] = useState(cloneTemplate?.defaultLocation || "");
 
   const canManage = can("MANAGE_TOURNAMENTS");
 
@@ -49,8 +46,9 @@ export default function CreateTournamentScreen() {
   }
 
   const validateAndCreate = () => {
-    if (!name.trim()) {
-      Alert.alert("Missing Information", "Please enter a tournament name");
+    // Validation
+    if (!templateName.trim()) {
+      Alert.alert("Missing Information", "Please enter a template name");
       return;
     }
 
@@ -79,31 +77,33 @@ export default function CreateTournamentScreen() {
       return;
     }
 
-    // Create tournament
-    const newTournament = {
-      name: name.trim(),
-      location: location.trim(),
-      startDate: startDate.trim(),
-      endDate: endDate.trim(),
-      registrationFee: Math.round(fee * 100),
+    // Create template
+    const newTemplate = {
+      name: templateName.trim(),
+      description: description.trim(),
+      registrationFee: Math.round(fee * 100), // Convert to cents
       ageRuleLabel: ageRuleLabel.trim(),
       minRosterSize: minRoster,
       maxRosterSize: maxRoster,
       maxTeams: teams,
-      durationSec: duration * 60,
-      leagueId: activeLeagueId,
-      status: "DRAFT",
+      matchDuration: duration,
+      defaultLocation: defaultLocation.trim(),
+      status: "ACTIVE",
     };
 
-    const tournamentId = createTournament(newTournament);
+    createTournamentTemplate(newTemplate);
 
     Alert.alert(
-      "Tournament Created! 🎉",
-      `${newTournament.name} has been created.\n\nYou can now open registration and manage teams.`,
+      "Template Created! 🎉",
+      `${newTemplate.name} is ready to use.\n\nYou can now quickly create tournaments using this template.`,
       [
         {
-          text: "View Tournament",
-          onPress: () => router.push(`/tournaments/${tournamentId}`),
+          text: "Create Tournament",
+          onPress: () => router.push('/tournaments/create'),
+        },
+        {
+          text: "View Templates",
+          onPress: () => router.back(),
         },
       ]
     );
@@ -112,103 +112,46 @@ export default function CreateTournamentScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: "#061A2B" }}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+        <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 20 }}>
+          <Text style={{ color: "#22C6D2", fontSize: 16 }}>← Back to Templates</Text>
+        </TouchableOpacity>
+
         {/* Header */}
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <TouchableOpacity onPress={() => router.back()}>
-            <Text style={{ color: "#22C6D2", fontSize: 16 }}>← Back</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.push('/league/tournament-templates')}
-            style={{
-              backgroundColor: "#0A2238",
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.1)",
-            }}
-          >
-            <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 13 }}>📋 Templates</Text>
-          </TouchableOpacity>
+        <View style={{ marginBottom: 24 }}>
+          <Text style={{ color: "#F2D100", fontSize: 28, fontWeight: "900" }}>
+            {clone ? "Clone Template" : "Create Template"}
+          </Text>
+          <Text style={{ color: "#9FB3C8", marginTop: 8, fontSize: 16 }}>
+            Set default values for quick tournament creation
+          </Text>
         </View>
 
-        <Text style={{ color: "#F2D100", fontSize: 28, fontWeight: "900", marginBottom: 8 }}>
-          Create Tournament
-        </Text>
-        <Text style={{ color: "#9FB3C8", fontSize: 16, marginBottom: 24 }}>
-          Set up a new tournament for your league
-        </Text>
-
-        {/* Template Info */}
-        {selectedTemplate && (
-          <View style={{
-            backgroundColor: "rgba(52,199,89,0.1)",
-            borderRadius: 12,
-            padding: 16,
-            marginBottom: 24,
-            borderWidth: 1,
-            borderColor: "rgba(52,199,89,0.3)",
-          }}>
-            <Text style={{ color: "#34C759", fontWeight: "900", marginBottom: 6 }}>
-              ✓ Using Template: {selectedTemplate.name}
-            </Text>
-            <Text style={{ color: "#EAF2FF", fontSize: 13 }}>
-              Default values have been pre-filled. You can modify any field before creating.
-            </Text>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={{ marginTop: 10 }}
-            >
-              <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 13 }}>
-                Choose Different Template →
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {!selectedTemplate && (tournamentTemplates || []).length > 0 && (
+        {clone && (
           <View style={{
             backgroundColor: "rgba(34,198,210,0.1)",
             borderRadius: 12,
-            padding: 16,
+            padding: 12,
             marginBottom: 24,
             borderWidth: 1,
             borderColor: "rgba(34,198,210,0.3)",
           }}>
-            <Text style={{ color: "#22C6D2", fontWeight: "900", marginBottom: 6 }}>
-              💡 Save time with a template
+            <Text style={{ color: "#22C6D2", fontWeight: "900" }}>
+              💡 Cloning from: {cloneTemplate?.name}
             </Text>
-            <Text style={{ color: "#EAF2FF", fontSize: 13, marginBottom: 10 }}>
-              Use a pre-configured template to quickly set up your tournament
-            </Text>
-            <TouchableOpacity
-              onPress={() => router.push('/league/tournament-templates')}
-              style={{
-                backgroundColor: "#22C6D2",
-                borderRadius: 10,
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                alignSelf: "flex-start",
-              }}
-            >
-              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>
-                Browse Templates
-              </Text>
-            </TouchableOpacity>
           </View>
         )}
 
         {/* Form */}
         <View style={{ gap: 20 }}>
-          {/* Tournament Name */}
+          {/* Template Name */}
           <View>
             <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 8 }}>
-              Tournament Name *
+              Template Name *
             </Text>
             <TextInput
-              value={name}
-              onChangeText={setName}
-              placeholder="e.g., Spring Championship 2026"
+              value={templateName}
+              onChangeText={setTemplateName}
+              placeholder="e.g., Standard 35+ Tournament"
               placeholderTextColor="rgba(255,255,255,0.4)"
               style={{
                 backgroundColor: "#0A2238",
@@ -220,18 +163,23 @@ export default function CreateTournamentScreen() {
                 borderColor: "rgba(255,255,255,0.1)",
               }}
             />
+            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+              Give your template a descriptive name
+            </Text>
           </View>
 
-          {/* Location */}
+          {/* Description */}
           <View>
             <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 8 }}>
-              Location
+              Description (Optional)
             </Text>
             <TextInput
-              value={location}
-              onChangeText={setLocation}
-              placeholder="e.g., Springfield Sports Complex"
+              value={description}
+              onChangeText={setDescription}
+              placeholder="e.g., Default settings for over-35 weekend tournaments"
               placeholderTextColor="rgba(255,255,255,0.4)"
+              multiline
+              numberOfLines={3}
               style={{
                 backgroundColor: "#0A2238",
                 color: "#EAF2FF",
@@ -240,52 +188,10 @@ export default function CreateTournamentScreen() {
                 fontSize: 16,
                 borderWidth: 1,
                 borderColor: "rgba(255,255,255,0.1)",
+                minHeight: 80,
+                textAlignVertical: "top",
               }}
             />
-          </View>
-
-          {/* Dates */}
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 8 }}>
-                Start Date
-              </Text>
-              <TextInput
-                value={startDate}
-                onChangeText={setStartDate}
-                placeholder="MM/DD/YYYY"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                style={{
-                  backgroundColor: "#0A2238",
-                  color: "#EAF2FF",
-                  borderRadius: 12,
-                  padding: 16,
-                  fontSize: 16,
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.1)",
-                }}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 8 }}>
-                End Date
-              </Text>
-              <TextInput
-                value={endDate}
-                onChangeText={setEndDate}
-                placeholder="MM/DD/YYYY"
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                style={{
-                  backgroundColor: "#0A2238",
-                  color: "#EAF2FF",
-                  borderRadius: 12,
-                  padding: 16,
-                  fontSize: 16,
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.1)",
-                }}
-              />
-            </View>
           </View>
 
           {/* Registration Fee */}
@@ -313,6 +219,9 @@ export default function CreateTournamentScreen() {
                 }}
               />
             </View>
+            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+              Default fee per team
+            </Text>
           </View>
 
           {/* Age Rule */}
@@ -335,6 +244,9 @@ export default function CreateTournamentScreen() {
                 borderColor: "rgba(255,255,255,0.1)",
               }}
             />
+            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+              Minimum age requirement for players
+            </Text>
           </View>
 
           {/* Roster Size */}
@@ -382,6 +294,9 @@ export default function CreateTournamentScreen() {
                 />
               </View>
             </View>
+            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+              Number of players per team
+            </Text>
           </View>
 
           {/* Max Teams */}
@@ -405,6 +320,9 @@ export default function CreateTournamentScreen() {
                 borderColor: "rgba(255,255,255,0.1)",
               }}
             />
+            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+              Tournament capacity
+            </Text>
           </View>
 
           {/* Match Duration */}
@@ -428,26 +346,84 @@ export default function CreateTournamentScreen() {
                 borderColor: "rgba(255,255,255,0.1)",
               }}
             />
+            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+              Default match length
+            </Text>
+          </View>
+
+          {/* Default Location */}
+          <View>
+            <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 8 }}>
+              Default Location (Optional)
+            </Text>
+            <TextInput
+              value={defaultLocation}
+              onChangeText={setDefaultLocation}
+              placeholder="e.g., Springfield Sports Complex"
+              placeholderTextColor="rgba(255,255,255,0.4)"
+              style={{
+                backgroundColor: "#0A2238",
+                color: "#EAF2FF",
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.1)",
+              }}
+            />
+            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+              Pre-fill location for tournaments
+            </Text>
+          </View>
+
+          {/* Summary Card */}
+          <View style={{
+            backgroundColor: "rgba(34,198,210,0.1)",
+            borderRadius: 12,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: "rgba(34,198,210,0.3)",
+          }}>
+            <Text style={{ color: "#22C6D2", fontWeight: "900", marginBottom: 12 }}>
+              📋 Template Summary
+            </Text>
+            <View style={{ gap: 6 }}>
+              <Text style={{ color: "#EAF2FF" }}>
+                • ${registrationFee || "150"} registration fee
+              </Text>
+              <Text style={{ color: "#EAF2FF" }}>
+                • {ageRuleLabel || "35+"} age requirement
+              </Text>
+              <Text style={{ color: "#EAF2FF" }}>
+                • {minRosterSize || "11"}-{maxRosterSize || "18"} player roster
+              </Text>
+              <Text style={{ color: "#EAF2FF" }}>
+                • Up to {maxTeams || "24"} teams
+              </Text>
+              <Text style={{ color: "#EAF2FF" }}>
+                • {matchDuration || "90"} minute matches
+              </Text>
+            </View>
           </View>
 
           {/* Create Button */}
           <TouchableOpacity
             onPress={validateAndCreate}
             style={{
-              backgroundColor: name.trim() ? "#34C759" : "#0A2238",
+              backgroundColor: templateName.trim() ? "#34C759" : "#0A2238",
               borderRadius: 16,
               padding: 18,
               alignItems: "center",
               borderWidth: 2,
-              borderColor: name.trim() ? "#34C759" : "rgba(255,255,255,0.1)",
+              borderColor: templateName.trim() ? "#34C759" : "rgba(255,255,255,0.1)",
             }}
           >
             <Text style={{
-              color: name.trim() ? "#061A2B" : "#9FB3C8",
+              color: templateName.trim() ? "#061A2B" : "#9FB3C8",
               fontSize: 18,
               fontWeight: "900",
             }}>
-              Create Tournament
+              Create Template
             </Text>
           </TouchableOpacity>
 

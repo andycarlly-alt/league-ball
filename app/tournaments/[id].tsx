@@ -1,315 +1,467 @@
-﻿// app/tournaments/[id].tsx - Tournament Detail with Registration - FIXED
+﻿// app/tournaments/[id].tsx - ENHANCED TOURNAMENT DETAIL PAGE (FIXED)
+
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo } from "react";
-import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useAppStore } from "../../src/state/AppStore";
-import { getLogoSource } from "../../src/utils/logos";
 
 export default function TournamentDetailScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams();
-  const store: any = useAppStore();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const tournamentId = String(id ?? "");
+
   const {
     tournaments,
-    teams,
-    currentUser,
-    addPendingPayment,
     getTeamsForTournament,
-  } = store;
+    players,
+    currentUser,
+    can,
+  } = useAppStore() as any;
 
-  const tournament = useMemo(() => {
-    return tournaments?.find((t: any) => t.id === id);
-  }, [tournaments, id]);
+  const tournament = useMemo(
+    () => tournaments.find((t: any) => t.id === tournamentId),
+    [tournaments, tournamentId]
+  );
 
-  const tournamentTeams = useMemo(() => {
-    return getTeamsForTournament?.(id as string) || [];
-  }, [id, getTeamsForTournament]);
+  const teams = useMemo(
+    () => getTeamsForTournament(tournamentId),
+    [tournamentId, tournaments]
+  );
 
-  const userTeam = useMemo(() => {
-    return teams?.find((t: any) => t.id === currentUser?.teamId);
-  }, [teams, currentUser?.teamId]);
+  const allPlayers = useMemo(
+    () => (players ?? []).filter((p: any) => p.tournamentId === tournamentId),
+    [players, tournamentId]
+  );
 
-  const isTeamRegistered = useMemo(() => {
-    return tournamentTeams.some((t: any) => t.id === currentUser?.teamId);
-  }, [tournamentTeams, currentUser?.teamId]);
+  const verifiedPlayers = useMemo(
+    () => allPlayers.filter((p: any) => p.verified),
+    [allPlayers]
+  );
+
+  const userTeam = useMemo(
+    () => teams.find((t: any) => t.id === currentUser.teamId),
+    [teams, currentUser.teamId]
+  );
 
   if (!tournament) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#061A2B", padding: 16, justifyContent: "center", alignItems: "center" }}>
-        <Text style={{ color: "#EAF2FF", fontSize: 18, fontWeight: "900" }}>
-          Tournament not found
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={{
-            marginTop: 20,
-            backgroundColor: "#22C6D2",
-            paddingHorizontal: 24,
-            paddingVertical: 12,
-            borderRadius: 12,
-          }}
-        >
-          <Text style={{ color: "#061A2B", fontWeight: "900" }}>Go Back</Text>
+      <View style={{ flex: 1, backgroundColor: "#061A2B", padding: 16 }}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={{ color: "#22C6D2", fontSize: 16 }}>← Back</Text>
         </TouchableOpacity>
+        <Text style={{ color: "#EAF2FF", marginTop: 20 }}>Tournament not found</Text>
       </View>
     );
   }
 
+  const registrationFee = tournament.registrationFee || 15000;
+  const isRegistrationOpen = tournament.status === "OPEN" || tournament.status === "Open";
+  const maxTeams = tournament.maxTeams || 24;
+  const spotsLeft = maxTeams - teams.length;
+  const registrationDeadline = tournament.registrationDeadline || tournament.startDate;
+
+  const getStatusColor = () => {
+    switch (tournament.status) {
+      case "OPEN":
+      case "Open":
+        return "#34C759";
+      case "LIVE":
+        return "#22C6D2";
+      case "COMPLETE":
+        return "#9FB3C8";
+      default:
+        return "#F2D100";
+    }
+  };
+
   const handleRegisterTeam = () => {
-    if (!currentUser?.teamId) {
-      Alert.alert("No Team", "You need to be a team representative to register");
+    if (!isRegistrationOpen) {
+      Alert.alert("Registration Closed", "This tournament is no longer accepting registrations");
       return;
     }
 
-    if (isTeamRegistered) {
-      Alert.alert("Already Registered", "Your team is already registered for this tournament");
+    if (spotsLeft <= 0) {
+      Alert.alert("Tournament Full", "This tournament has reached maximum capacity");
       return;
     }
 
-    const fee = tournament.registrationFee || 15000; // $150
-    
-    Alert.alert(
-      "Register Team",
-      `${tournament.name}\n\nTeam: ${userTeam?.name || "Your Team"}\nRegistration Fee: $${(fee / 100).toFixed(2)}\n\nRoster will be locked until payment is complete.\n\nProceed to payment?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Pay Now",
-          onPress: () => {
-            // CREATE PENDING PAYMENT
-            if (typeof addPendingPayment === 'function') {
-              addPendingPayment({
-                id: `reg_${tournament.id}_${Date.now()}`,
-                type: "TOURNAMENT_REGISTRATION",
-                amount: fee,
-                teamId: currentUser?.teamId,
-                teamName: userTeam?.name,
-                tournamentId: tournament.id,
-                tournamentName: tournament.name,
-                status: "PENDING",
-                createdAt: Date.now(),
-              });
-            }
-            
-            // FIXED: Changed from '/billing' to '/(tabs)/billing' for proper tab navigation
-            router.push('/(tabs)/billing');
-            
-            setTimeout(() => {
-              Alert.alert(
-                "Payment Required ⚠️",
-                "Complete payment on the Billing screen to finalize registration.\n\nYour roster is locked until payment is received.",
-                [{ text: "OK" }]
-              );
-            }, 500);
-          },
-        },
-      ]
-    );
+    // Navigate to registration choice screen
+    router.push(`/tournaments/${tournamentId}/register`);
   };
 
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return "TBD";
-    const date = new Date(dateStr);
-    return date.toLocaleDateString();
+  const handleBrowseTeams = () => {
+    router.push(`/tournaments/${tournamentId}/teams/browse`);
   };
+
+  const handleViewMyTeam = () => {
+    if (userTeam) {
+      router.push(`/teams/${userTeam.id}/dashboard`);
+    }
+  };
+
+  const canManage = can("MANAGE_TOURNAMENTS");
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: "#061A2B" }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 16 }}
-    >
-      {/* Header */}
-      <TouchableOpacity onPress={() => router.back()} style={{ marginBottom: 12 }}>
-        <Text style={{ color: "#22C6D2", fontSize: 16 }}>← Back to Tournaments</Text>
-      </TouchableOpacity>
+    <View style={{ flex: 1, backgroundColor: "#061A2B" }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        {/* Header Image/Banner */}
+        <View style={{ 
+          backgroundColor: "#0A2238", 
+          paddingTop: 60, 
+          paddingBottom: 40, 
+          paddingHorizontal: 16,
+          borderBottomLeftRadius: 24,
+          borderBottomRightRadius: 24,
+        }}>
+          <TouchableOpacity 
+            onPress={() => router.back()} 
+            style={{ position: "absolute", top: 16, left: 16, zIndex: 10 }}
+          >
+            <View style={{ backgroundColor: "rgba(0,0,0,0.5)", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 }}>
+              <Text style={{ color: "#22C6D2", fontSize: 16, fontWeight: "900" }}>← Back</Text>
+            </View>
+          </TouchableOpacity>
 
-      <Text style={{ color: "#F2D100", fontSize: 24, fontWeight: "900" }}>
-        {tournament.name}
-      </Text>
+          <View style={{ alignItems: "center" }}>
+            <View style={{
+              backgroundColor: getStatusColor(),
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 20,
+              marginBottom: 16,
+            }}>
+              <Text style={{ color: tournament.status === "COMPLETE" ? "#061A2B" : "#061A2B", fontWeight: "900", fontSize: 14 }}>
+                {tournament.status || "DRAFT"}
+              </Text>
+            </View>
 
-      {/* Tournament Info */}
-      <View
-        style={{
-          backgroundColor: "#0A2238",
-          borderRadius: 14,
-          padding: 16,
-          borderWidth: 1,
-          borderColor: "rgba(255,255,255,0.08)",
-        }}
-      >
-        <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 12 }}>
-          Tournament Details
-        </Text>
-        
-        <View style={{ gap: 8 }}>
-          {tournament.location && (
-            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ color: "#9FB3C8" }}>Location:</Text>
-              <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>{tournament.location}</Text>
+            <Text style={{ color: "#F2D100", fontSize: 28, fontWeight: "900", textAlign: "center", marginBottom: 8 }}>
+              {tournament.name}
+            </Text>
+
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 8 }}>
+              <View style={{ backgroundColor: "rgba(242,209,0,0.2)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
+                <Text style={{ color: "#F2D100", fontSize: 13, fontWeight: "900" }}>
+                  📍 {tournament.location || "Location TBD"}
+                </Text>
+              </View>
+              <View style={{ backgroundColor: "rgba(34,198,210,0.2)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}>
+                <Text style={{ color: "#22C6D2", fontSize: 13, fontWeight: "900" }}>
+                  {tournament.ageRuleLabel || "35+"}
+                </Text>
+              </View>
             </View>
-          )}
-          
-          {tournament.startDate && (
-            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ color: "#9FB3C8" }}>Start Date:</Text>
-              <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>{formatDate(tournament.startDate)}</Text>
-            </View>
-          )}
-          
-          {tournament.endDate && (
-            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ color: "#9FB3C8" }}>End Date:</Text>
-              <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>{formatDate(tournament.endDate)}</Text>
-            </View>
-          )}
-          
-          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <Text style={{ color: "#9FB3C8" }}>Teams Registered:</Text>
-            <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>{tournamentTeams.length}</Text>
           </View>
-          
-          {tournament.registrationFee && (
-            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ color: "#9FB3C8" }}>Registration Fee:</Text>
-              <Text style={{ color: "#F2D100", fontWeight: "900" }}>
-                ${(tournament.registrationFee / 100).toFixed(2)}
-              </Text>
-            </View>
-          )}
         </View>
-      </View>
 
-      {/* Registration Button - Only for Team Reps */}
-      {currentUser?.role === "TEAM_REP" && currentUser?.teamId && (
-        <View>
-          {isTeamRegistered ? (
-            <View
-              style={{
-                backgroundColor: "rgba(52,199,89,0.1)",
-                borderRadius: 14,
-                padding: 16,
-                borderWidth: 2,
-                borderColor: "#34C759",
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: "#34C759", fontWeight: "900", fontSize: 16 }}>
-                ✅ Team Registered
-              </Text>
-              <Text style={{ color: "#EAF2FF", marginTop: 4 }}>
-                {userTeam?.name} is registered for this tournament
-              </Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              onPress={handleRegisterTeam}
-              style={{
-                backgroundColor: "#34C759",
-                padding: 16,
-                borderRadius: 12,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 16 }}>
-                Register Team - ${((tournament.registrationFee || 15000) / 100).toFixed(2)}
-              </Text>
-              <Text style={{ color: "#061A2B", marginTop: 4, fontSize: 12 }}>
-                {userTeam?.name || "Your Team"}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* Registered Teams */}
-      {tournamentTeams.length > 0 && (
-        <View
-          style={{
-            backgroundColor: "#0A2238",
-            borderRadius: 14,
+        <View style={{ padding: 16 }}>
+          {/* Quick Stats */}
+          <View style={{ 
+            backgroundColor: "#0A2238", 
+            borderRadius: 16, 
             padding: 16,
+            marginBottom: 20,
             borderWidth: 1,
             borderColor: "rgba(255,255,255,0.08)",
-          }}
-        >
-          <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 12 }}>
-            Registered Teams ({tournamentTeams.length})
-          </Text>
-          
-          <View style={{ gap: 12 }}>
-            {tournamentTeams.map((team: any) => (
-              <TouchableOpacity
-                key={team.id}
-                onPress={() => router.push(`/teams/${team.id}`)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: 12,
-                  backgroundColor: "rgba(255,255,255,0.03)",
-                  borderRadius: 12,
-                }}
-              >
-                <Image
-                  source={getLogoSource(team.logoKey)}
-                  style={{ width: 40, height: 40, borderRadius: 8 }}
-                  resizeMode="cover"
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
-                    {team.name}
+          }}>
+            <Text style={{ color: "#9FB3C8", fontSize: 12, fontWeight: "900", marginBottom: 12 }}>
+              TOURNAMENT STATS
+            </Text>
+            <View style={{ flexDirection: "row", justifyContent: "space-around" }}>
+              <View style={{ alignItems: "center" }}>
+                <Text style={{ color: "#F2D100", fontSize: 32, fontWeight: "900" }}>{teams.length}</Text>
+                <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>Teams</Text>
+              </View>
+              <View style={{ width: 1, backgroundColor: "rgba(255,255,255,0.1)" }} />
+              <View style={{ alignItems: "center" }}>
+                <Text style={{ color: "#22C6D2", fontSize: 32, fontWeight: "900" }}>{allPlayers.length}</Text>
+                <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>Players</Text>
+              </View>
+              <View style={{ width: 1, backgroundColor: "rgba(255,255,255,0.1)" }} />
+              <View style={{ alignItems: "center" }}>
+                <Text style={{ color: "#34C759", fontSize: 32, fontWeight: "900" }}>{verifiedPlayers.length}</Text>
+                <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>Verified</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Registration Status */}
+          {isRegistrationOpen && (
+            <View style={{
+              backgroundColor: "rgba(52,199,89,0.1)",
+              borderRadius: 16,
+              padding: 16,
+              marginBottom: 20,
+              borderWidth: 2,
+              borderColor: "#34C759",
+            }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View>
+                  <Text style={{ color: "#34C759", fontSize: 18, fontWeight: "900" }}>
+                    ✅ Registration Open
                   </Text>
-                  {team.repName && (
-                    <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 2 }}>
-                      Rep: {team.repName}
+                  <Text style={{ color: "#EAF2FF", marginTop: 6 }}>
+                    {spotsLeft} of {maxTeams} spots remaining
+                  </Text>
+                  {registrationDeadline && (
+                    <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
+                      Deadline: {registrationDeadline}
                     </Text>
                   )}
                 </View>
-                <Text style={{ color: "#22C6D2" }}>→</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
+                <View style={{ alignItems: "center" }}>
+                  <Text style={{ color: "#34C759", fontSize: 28, fontWeight: "900" }}>{spotsLeft}</Text>
+                  <Text style={{ color: "#9FB3C8", fontSize: 11 }}>spots</Text>
+                </View>
+              </View>
+            </View>
+          )}
 
-      {/* Quick Actions */}
-      <View style={{ gap: 10 }}>
-        <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>
-          Quick Actions
-        </Text>
-        
-        <TouchableOpacity
-          onPress={() => router.push(`/tournaments/${id}/teams`)}
-          style={{
+          {/* Registration Fee */}
+          <View style={{
             backgroundColor: "#0A2238",
-            padding: 14,
-            borderRadius: 12,
+            borderRadius: 16,
+            padding: 16,
+            marginBottom: 20,
             borderWidth: 1,
             borderColor: "rgba(255,255,255,0.08)",
-          }}
-        >
-          <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
-            📋 View All Teams
-          </Text>
-        </TouchableOpacity>
-        
-        {currentUser?.role === "LEAGUE_ADMIN" && (
-          <TouchableOpacity
-            onPress={() => router.push('/admin/revenue')}
-            style={{
-              backgroundColor: "#0A2238",
-              padding: 14,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.08)",
-            }}
-          >
-            <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
-              💰 View Revenue Dashboard
+          }}>
+            <Text style={{ color: "#9FB3C8", fontSize: 12, fontWeight: "900", marginBottom: 8 }}>
+              REGISTRATION FEE
             </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </ScrollView>
+            <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+              <Text style={{ color: "#F2D100", fontSize: 36, fontWeight: "900" }}>
+                ${(registrationFee / 100).toFixed(0)}
+              </Text>
+              <Text style={{ color: "#9FB3C8", fontSize: 16 }}>per team</Text>
+            </View>
+            <Text style={{ color: "#9FB3C8", marginTop: 8, lineHeight: 20 }}>
+              Includes tournament entry, verified roster, match scheduling, and access to all tournament features
+            </Text>
+          </View>
+
+          {/* Tournament Details */}
+          <View style={{
+            backgroundColor: "#0A2238",
+            borderRadius: 16,
+            padding: 16,
+            marginBottom: 20,
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,0.08)",
+          }}>
+            <Text style={{ color: "#9FB3C8", fontSize: 12, fontWeight: "900", marginBottom: 12 }}>
+              TOURNAMENT DETAILS
+            </Text>
+            <View style={{ gap: 12 }}>
+              {tournament.startDate && (
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                  <Text style={{ color: "#22C6D2", fontSize: 16 }}>📅</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>Dates</Text>
+                    <Text style={{ color: "#9FB3C8", marginTop: 4 }}>
+                      {tournament.startDate} {tournament.endDate ? `- ${tournament.endDate}` : ""}
+                    </Text>
+                  </View>
+                </View>
+              )}
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <Text style={{ color: "#22C6D2", fontSize: 16 }}>👥</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>Age Requirement</Text>
+                  <Text style={{ color: "#9FB3C8", marginTop: 4 }}>
+                    {tournament.ageRuleLabel || "35+"} - All players must meet age requirements
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <Text style={{ color: "#22C6D2", fontSize: 16 }}>✅</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>Verification Required</Text>
+                  <Text style={{ color: "#9FB3C8", marginTop: 4 }}>
+                    All players must complete document verification before playing
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* User's Team Status */}
+          {userTeam && (
+            <TouchableOpacity
+              onPress={handleViewMyTeam}
+              style={{
+                backgroundColor: "#22C6D2",
+                borderRadius: 16,
+                padding: 16,
+                marginBottom: 20,
+                borderWidth: 2,
+                borderColor: "#22C6D2",
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#061A2B", fontSize: 12, fontWeight: "900", marginBottom: 6 }}>
+                    YOUR TEAM
+                  </Text>
+                  <Text style={{ color: "#061A2B", fontSize: 18, fontWeight: "900" }}>
+                    {userTeam.name}
+                  </Text>
+                  <Text style={{ color: "#061A2B", marginTop: 4 }}>
+                    Tap to manage roster and settings
+                  </Text>
+                </View>
+                <Text style={{ color: "#061A2B", fontSize: 24 }}>→</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+
+          {/* Main CTAs */}
+          {!userTeam && isRegistrationOpen && (
+            <View style={{ gap: 12 }}>
+              <TouchableOpacity
+                onPress={handleRegisterTeam}
+                style={{
+                  backgroundColor: "#34C759",
+                  borderRadius: 16,
+                  padding: 18,
+                  alignItems: "center",
+                  borderWidth: 2,
+                  borderColor: "#34C759",
+                }}
+              >
+                <Text style={{ color: "#061A2B", fontSize: 18, fontWeight: "900" }}>
+                  ⚽ Register Your Team
+                </Text>
+                <Text style={{ color: "#061A2B", marginTop: 4, fontSize: 13 }}>
+                  Create new team or join existing
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleBrowseTeams}
+                style={{
+                  backgroundColor: "#0A2238",
+                  borderRadius: 16,
+                  padding: 18,
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: "rgba(255,255,255,0.1)",
+                }}
+              >
+                <Text style={{ color: "#EAF2FF", fontSize: 18, fontWeight: "900" }}>
+                  👥 Browse Teams
+                </Text>
+                <Text style={{ color: "#9FB3C8", marginTop: 4, fontSize: 13 }}>
+                  Find a team to join as a player
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Teams List */}
+          {teams.length > 0 && (
+            <View style={{ marginTop: 24 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <Text style={{ color: "#F2D100", fontSize: 20, fontWeight: "900" }}>
+                  Registered Teams ({teams.length})
+                </Text>
+                <TouchableOpacity onPress={() => router.push(`/tournaments/${tournamentId}/teams`)}>
+                  <Text style={{ color: "#22C6D2", fontWeight: "900" }}>View All →</Text>
+                </TouchableOpacity>
+              </View>
+
+              {teams.slice(0, 5).map((team: any) => (
+                <TouchableOpacity
+                  key={team.id}
+                  onPress={() => router.push(`/teams/${team.id}`)}
+                  style={{
+                    backgroundColor: "#0A2238",
+                    borderRadius: 12,
+                    padding: 14,
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.08)",
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <View>
+                    <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
+                      {team.name}
+                    </Text>
+                    <Text style={{ color: "#9FB3C8", marginTop: 4, fontSize: 13 }}>
+                      {team.playerCount || 0} players • {team.repName || "No rep"}
+                    </Text>
+                  </View>
+                  <Text style={{ color: "#22C6D2", fontSize: 18 }}>→</Text>
+                </TouchableOpacity>
+              ))}
+
+              {teams.length > 5 && (
+                <TouchableOpacity
+                  onPress={() => router.push(`/tournaments/${tournamentId}/teams`)}
+                  style={{
+                    backgroundColor: "#0A2238",
+                    borderRadius: 12,
+                    padding: 14,
+                    alignItems: "center",
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.1)",
+                  }}
+                >
+                  <Text style={{ color: "#22C6D2", fontWeight: "900" }}>
+                    View All {teams.length} Teams →
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Admin Controls */}
+          {canManage && (
+            <View style={{ marginTop: 24 }}>
+              <View style={{ backgroundColor: "rgba(242,209,0,0.1)", padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "rgba(242,209,0,0.3)", marginBottom: 12 }}>
+                <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 12, textAlign: "center" }}>
+                  🔐 ORGANIZER CONTROLS
+                </Text>
+              </View>
+
+              <View style={{ gap: 10 }}>
+                <TouchableOpacity
+                  onPress={() => router.push(`/tournaments/${tournamentId}/admin`)}
+                  style={{
+                    backgroundColor: "#F2D100",
+                    borderRadius: 12,
+                    padding: 14,
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: "#061A2B", fontWeight: "900" }}>
+                    📊 Tournament Dashboard
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => router.push(`/tournaments/${tournamentId}/settings`)}
+                  style={{
+                    backgroundColor: "#0A2238",
+                    borderRadius: 12,
+                    padding: 14,
+                    alignItems: "center",
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.1)",
+                  }}
+                >
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
+                    ⚙️ Tournament Settings
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
