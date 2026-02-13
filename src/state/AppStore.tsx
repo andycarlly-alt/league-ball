@@ -1,3 +1,6 @@
+// src/state/AppStore.tsx
+// ✅ COMPLETE APPSTORE WITH FIXED UNDERAGE RULES ENFORCEMENT
+
 import React, { createContext, ReactNode, useContext, useEffect, useMemo, useState } from "react";
 
 export type Role = "LEAGUE_ADMIN" | "TOURNAMENT_ADMIN" | "TEAM_REP" | "REFEREE" | "FAN";
@@ -280,7 +283,6 @@ export interface TournamentTemplate {
   createdBy: string;
 }
 
-// ========== TEAM ELIGIBILITY TYPES ==========
 export interface TeamEligibility {
   teamId: string;
   isEligible: boolean;
@@ -306,6 +308,42 @@ export interface CardFine {
   dueDate: number;
   paidAt?: number;
 }
+
+export type UnderageValidation = {
+  isValid: boolean;
+  currentUnderaged: number;
+  maxAllowed: number;
+  reason?: string;
+  underagedPlayers?: Player[];
+};
+
+export type Tournament = {
+  id: string;
+  leagueId: string;
+  name: string;
+  location?: string;
+  startDate?: string;
+  endDate?: string;
+  registrationFee?: number;
+  ageRule?: string;
+  ageRuleLabel?: string;
+  ageBand?: string;
+  minRosterSize?: number;
+  maxRosterSize?: number;
+  maxTeams?: number;
+  status?: string;
+  rosterLocked?: boolean;
+  durationSec?: number;
+  createdAt?: number;
+  
+  underageRules?: {
+    enabled: boolean;
+    ageThreshold: number;
+    maxUnderagedOnRoster: number;
+    maxUnderagedOnField?: number;
+    rosterLockStage?: "GROUP_STAGE" | "KNOCKOUT" | "SEMI_FINALS" | "NEVER";
+  };
+};
 
 export type Bet = {
   id: string;
@@ -363,6 +401,13 @@ type CreateTournamentInput = {
   maxRosterSize?: number;
   maxTeams?: number;
   durationSec?: number;
+  underageRules?: {
+    enabled: boolean;
+    ageThreshold: number;
+    maxUnderagedOnRoster: number;
+    maxUnderagedOnField?: number;
+    rosterLockStage?: "GROUP_STAGE" | "KNOCKOUT" | "SEMI_FINALS" | "NEVER";
+  };
 };
 
 type CreateTeamInput = {
@@ -437,7 +482,8 @@ type AppStore = {
     | "ADD_PLAYER"
     | "VERIFY_PLAYER"
     | "TRANSFER_PLAYER"
-    | "VIEW_ADMIN",
+    | "VIEW_ADMIN"
+    | "REFEREE_MATCH",
     context?: { teamId?: string }
   ) => boolean;
   leagues: League[];
@@ -445,7 +491,7 @@ type AppStore = {
   activeLeague?: League | null;
   setActiveLeagueId: (id: string) => void;
   setActiveLeague: (id: string) => void;
-  tournaments: any[];
+  tournaments: Tournament[];
   teams: Team[];
   players: Player[];
   matches: Match[];
@@ -486,7 +532,6 @@ type AppStore = {
   getTournamentTemplate: (templateId: string) => TournamentTemplate | undefined;
   archiveTournamentTemplate: (templateId: string) => void;
   restoreTournamentTemplate: (templateId: string) => void;
-  // Team Eligibility & Fines
   teamEligibility: Record<string, TeamEligibility>;
   cardFines: CardFine[];
   getTeamEligibility: (teamId: string) => TeamEligibility;
@@ -508,6 +553,18 @@ type AppStore = {
     blockedTeams: string[];
     message?: string;
   };
+  
+  isPlayerUnderaged: (playerId: string, tournamentId: string) => boolean;
+  getTeamUnderagedPlayers: (teamId: string, tournamentId: string) => Player[];
+  canAddUnderagedPlayer: (teamId: string, tournamentId: string) => UnderageValidation;
+  validateFieldLineup: (matchId: string, teamId: string, playersOnField: string[]) => { 
+    isValid: boolean; 
+    reason?: string;
+    underagedCount?: number;
+    maxAllowed?: number;
+  };
+  canModifyRoster: (tournamentId: string) => { canModify: boolean; reason?: string };
+  
   getTeamsForTournament: (tournamentId: string) => Team[];
   getPlayersForTeam: (teamId: string) => Player[];
   getEventsForMatch: (matchId: string) => LoggedEvent[];
@@ -558,6 +615,7 @@ type AppStore = {
     by: string;
   }) => { ok: boolean; reason?: string };
   setMatchLive: (matchId: string, isLive: boolean) => void;
+  updateMatchStatus: (matchId: string, status: MatchStatus) => void;
   tickMatch: (matchId: string, seconds: number) => void;
   resetMatchClock: (matchId: string) => void;
   logMatchEvent: (input: {
@@ -608,16 +666,80 @@ function buildSeed() {
   const leagues: League[] = [
     { id: leagueId, name: "NVT League", seasonLabel: "Demo Season", plan: "Free" },
   ];
-  const tournaments = [
+  
+  const tournaments: Tournament[] = [
     {
       id: tourId,
       leagueId,
       name: "NVT Demo Tournament",
       location: "DMV",
       registrationFee: 15000,
+      ageRule: "O35",
+      ageRuleLabel: "35+",
+      ageBand: "35+",
+      minRosterSize: 11,
+      maxRosterSize: 18,
+      maxTeams: 24,
+      status: "Open",
+      rosterLocked: false,
+      durationSec: 90 * 60,
       createdAt: Date.now(),
+      underageRules: {
+        enabled: true,
+        ageThreshold: 35,
+        maxUnderagedOnRoster: 0,
+        rosterLockStage: "NEVER",
+      },
+    },
+    {
+      id: "tour_northeast_2026",
+      leagueId,
+      name: "North East Veterans Tournament",
+      location: "North East Region",
+      registrationFee: 15000,
+      ageRule: "O35",
+      ageRuleLabel: "35+",
+      ageBand: "35+",
+      minRosterSize: 11,
+      maxRosterSize: 18,
+      maxTeams: 24,
+      status: "Open",
+      rosterLocked: false,
+      durationSec: 90 * 60,
+      createdAt: Date.now(),
+      underageRules: {
+        enabled: true,
+        ageThreshold: 35,
+        maxUnderagedOnRoster: 3,
+        rosterLockStage: "NEVER",
+      },
+    },
+    {
+      id: "tour_dmv_2026",
+      leagueId,
+      name: "DMV League",
+      location: "DMV Region",
+      registrationFee: 20000,
+      ageRule: "O35",
+      ageRuleLabel: "35+",
+      ageBand: "35+",
+      minRosterSize: 11,
+      maxRosterSize: 18,
+      maxTeams: 24,
+      status: "Open",
+      rosterLocked: false,
+      durationSec: 90 * 60,
+      createdAt: Date.now(),
+      underageRules: {
+        enabled: true,
+        ageThreshold: 35,
+        maxUnderagedOnRoster: 5,
+        maxUnderagedOnField: 3,
+        rosterLockStage: "GROUP_STAGE",
+      },
     },
   ];
+  
   const teams: Team[] = [
     { id: "team_spartan", leagueId, tournamentId: tourId, name: "Spartan Veterans FC", logoKey: "spartan", repName: "Team Rep", wins: 5, draws: 2, losses: 1 },
     { id: "team_lanham", leagueId, tournamentId: tourId, name: "Lanham Veteran FC", logoKey: "lanham", repName: "Team Rep", wins: 4, draws: 3, losses: 1 },
@@ -634,6 +756,7 @@ function buildSeed() {
     { id: "team_njnd", leagueId, tournamentId: tourId, name: "NJ Ndamba Veterans FC", logoKey: "nj-ndamba", repName: "Team Rep", wins: 0, draws: 3, losses: 5 },
     { id: "team_landover", leagueId, tournamentId: tourId, name: "Landover FC", logoKey: "landover", repName: "Team Rep", wins: 0, draws: 2, losses: 6 },
   ];
+  
   const matches: Match[] = [
     {
       id: "match_1",
@@ -702,6 +825,7 @@ function buildSeed() {
       },
     },
   ];
+  
   const players: Player[] = [
     {
       id: 'player_bvfc_1',
@@ -885,7 +1009,6 @@ function buildSeed() {
       motmWins: 0,
       motmNominations: 0,
     },
-
     {
       id: 'player_elite_1',
       teamId: 'team_elite',
@@ -959,7 +1082,6 @@ function buildSeed() {
       motmWins: 0,
       motmNominations: 0,
     },
-
     {
       id: 'player_dp_1',
       teamId: 'team_dp',
@@ -1034,6 +1156,7 @@ function buildSeed() {
       motmNominations: 0,
     },
   ];
+  
   return { leagues, tournaments, teams, matches, players, leagueId, tourId };
 }
 
@@ -1041,7 +1164,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const seed = useMemo(() => buildSeed(), []);
   const [leagues] = useState<League[]>(seed.leagues);
   const [activeLeagueId, setActiveLeagueId] = useState<string>(seed.leagueId);
-  const [tournaments, setTournaments] = useState<any[]>(seed.tournaments);
+  const [tournaments, setTournaments] = useState<Tournament[]>(seed.tournaments);
   const [teams, setTeams] = useState<Team[]>(seed.teams);
   const [players, setPlayers] = useState<Player[]>(seed.players);
   const [matches, setMatches] = useState<Match[]>(seed.matches);
@@ -1091,7 +1214,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     },
   ]);
 
-  // ========== TEAM ELIGIBILITY STATE ==========
   const [teamEligibility, setTeamEligibility] = useState<Record<string, TeamEligibility>>({});
   const [cardFines, setCardFines] = useState<CardFine[]>([]);
   
@@ -1144,6 +1266,8 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         return role === "LEAGUE_ADMIN" || role === "TOURNAMENT_ADMIN";
       case "MANAGE_MATCH":
         return role === "LEAGUE_ADMIN" || role === "TOURNAMENT_ADMIN" || role === "REFEREE";
+      case "REFEREE_MATCH":
+        return role === "LEAGUE_ADMIN" || role === "TOURNAMENT_ADMIN" || role === "REFEREE";
       case "VIEW_TEAM_ROSTER":
         return true;
       case "INVITE_PLAYER":
@@ -1166,6 +1290,116 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       default:
         return false;
     }
+  };
+
+  const isPlayerUnderaged = (playerId: string, tournamentId: string): boolean => {
+    const player = players.find(p => p.id === playerId);
+    const tournament = tournaments.find(t => t.id === tournamentId);
+    
+    if (!player || !tournament?.underageRules?.enabled) return false;
+    
+    const age = calcAge(player.dob);
+    return age < tournament.underageRules.ageThreshold;
+  };
+
+  const getTeamUnderagedPlayers = (teamId: string, tournamentId: string): Player[] => {
+    const tournament = tournaments.find(t => t.id === tournamentId);
+    if (!tournament?.underageRules?.enabled) return [];
+    
+    return players.filter(p => 
+      p.teamId === teamId && 
+      p.tournamentId === tournamentId &&
+      isPlayerUnderaged(p.id, tournamentId)
+    );
+  };
+
+  const canAddUnderagedPlayer = (teamId: string, tournamentId: string): UnderageValidation => {
+    const tournament = tournaments.find(t => t.id === tournamentId);
+    
+    if (!tournament?.underageRules?.enabled) {
+      return { isValid: true, currentUnderaged: 0, maxAllowed: 999 };
+    }
+    
+    const underagedPlayers = getTeamUnderagedPlayers(teamId, tournamentId);
+    const currentCount = underagedPlayers.length;
+    const maxAllowed = tournament.underageRules.maxUnderagedOnRoster;
+    
+    if (currentCount >= maxAllowed) {
+      return {
+        isValid: false,
+        currentUnderaged: currentCount,
+        maxAllowed,
+        reason: maxAllowed === 0 
+          ? `This is a strict ${tournament.underageRules.ageThreshold}+ tournament. NO underaged players allowed.`
+          : `Team already has ${currentCount} under-aged players. Max allowed: ${maxAllowed}`,
+        underagedPlayers,
+      };
+    }
+    
+    return {
+      isValid: true,
+      currentUnderaged: currentCount,
+      maxAllowed,
+      underagedPlayers,
+    };
+  };
+
+  const validateFieldLineup = (
+    matchId: string,
+    teamId: string,
+    playersOnField: string[]
+  ): { isValid: boolean; reason?: string; underagedCount?: number; maxAllowed?: number } => {
+    const match = matches.find(m => m.id === matchId);
+    if (!match) return { isValid: false, reason: "Match not found" };
+    
+    const tournament = tournaments.find(t => t.id === match.tournamentId);
+    if (!tournament?.underageRules?.enabled || !tournament.underageRules.maxUnderagedOnField) {
+      return { isValid: true };
+    }
+    
+    const underagedOnField = playersOnField.filter(playerId => 
+      isPlayerUnderaged(playerId, match.tournamentId || "")
+    );
+    
+    const maxAllowed = tournament.underageRules.maxUnderagedOnField;
+    
+    if (underagedOnField.length > maxAllowed) {
+      return {
+        isValid: false,
+        reason: `Cannot have ${underagedOnField.length} under-aged players on field. Max allowed: ${maxAllowed}`,
+        underagedCount: underagedOnField.length,
+        maxAllowed,
+      };
+    }
+    
+    return { 
+      isValid: true, 
+      underagedCount: underagedOnField.length, 
+      maxAllowed 
+    };
+  };
+
+  const canModifyRoster = (tournamentId: string): { canModify: boolean; reason?: string } => {
+    const tournament = tournaments.find(t => t.id === tournamentId);
+    
+    if (!tournament) {
+      return { canModify: false, reason: "Tournament not found" };
+    }
+    
+    if (tournament.rosterLocked) {
+      return { canModify: false, reason: "Roster is locked" };
+    }
+    
+    if (tournament.underageRules?.rosterLockStage === "GROUP_STAGE") {
+      if (tournament.status === "KNOCKOUT" || tournament.status === "COMPLETE") {
+        return { 
+          canModify: false, 
+          reason: "Roster locked - tournament has progressed beyond group stage" 
+        };
+      }
+    }
+    
+    return { canModify: true };
   };
 
   const addPendingPayment = (payment: PendingPayment) => {
@@ -1548,7 +1782,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     updateTournamentTemplate(templateId, { status: "ACTIVE" });
   };
 
-  // ========== TEAM ELIGIBILITY METHODS ==========
   const getTeamEligibility = (teamId: string): TeamEligibility => {
     const existing = teamEligibility[teamId];
     if (existing?.adminOverride) {
@@ -1801,6 +2034,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
         rosterLocked: false,
         durationSec: input.durationSec ?? (90 * 60),
         createdAt: Date.now(),
+        underageRules: input.underageRules,
       },
     ]);
     return { id };
@@ -1868,35 +2102,82 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     return matchId;
   };
 
+  // ✅ FIXED addPlayer function
   const addPlayer = (input: AddPlayerInput) => {
     const fullName = String(input?.fullName ?? "").trim();
     const id = uid("player");
+    
     if (!fullName) {
       return { ok: false, reason: "Player name is required", id };
     }
 
     const tournamentId = input.tournamentId ?? null;
-    const tournament = tournamentId ? tournaments.find((t: any) => t.id === tournamentId) : null;
+    const tournament = tournamentId ? tournaments.find(t => t.id === tournamentId) : null;
 
+    // ✅ CHECK 1: Roster locked?
     if (tournament?.rosterLocked) {
       return { ok: false, reason: "Roster is locked. Cannot add players.", id };
     }
 
-    if (tournament && input.dob) {
-      const age = calcAge(input.dob);
-      const ageRule = tournament.ageRule ?? "O35";
-      
-      if (ageRule === "U30" && age >= 30) {
-        return { ok: false, reason: `Player is ${age} years old. This tournament requires Under 30.`, id };
-      }
-      if (ageRule === "30_34" && (age < 30 || age > 34)) {
-        return { ok: false, reason: `Player is ${age} years old. This tournament requires 30-34 age bracket.`, id };
-      }
-      if (ageRule === "O35" && age < 35) {
-        return { ok: false, reason: `Player is ${age} years old. This tournament requires 35 and over.`, id };
+    // ✅ CHECK 2: Can modify roster (stage check)?
+    if (tournamentId) {
+      const rosterCheck = canModifyRoster(tournamentId);
+      if (!rosterCheck.canModify) {
+        return { ok: false, reason: rosterCheck.reason, id };
       }
     }
 
+    // ✅ CHECK 3: Age validation (FIXED LOGIC)
+    if (tournament && input.dob) {
+      const age = calcAge(input.dob);
+      
+      // ✅ If tournament has NEW underage rules system, use it
+      if (tournament.underageRules?.enabled) {
+        const threshold = tournament.underageRules.ageThreshold;
+        const isUnderaged = age < threshold;
+        
+        console.log("🔍 Age Check:", {
+          playerAge: age,
+          threshold: threshold,
+          isUnderaged: isUnderaged,
+          tournamentName: tournament.name
+        });
+        
+        if (isUnderaged) {
+          // Player is underaged - check if allowed
+          const validation = canAddUnderagedPlayer(String(input.teamId), tournamentId);
+          
+          console.log("✅ Underage Validation:", validation);
+          
+          if (!validation.isValid) {
+            // NOT allowed - block with reason
+            return { ok: false, reason: validation.reason, id };
+          }
+          
+          // IS allowed - continue to add player
+          console.log("✅ Underaged player ALLOWED - adding to roster");
+        } else {
+          // Player is NOT underaged - they're old enough, allow
+          console.log("✅ Player is", age, "- meets age threshold of", threshold);
+        }
+      } 
+      // ✅ Fallback: If no underage rules, use OLD age rule system
+      else {
+        const ageRule = tournament.ageRule ?? "O35";
+        
+        if (ageRule === "U30" && age >= 30) {
+          return { ok: false, reason: `Player is ${age} years old. This tournament requires Under 30.`, id };
+        }
+        if (ageRule === "30_34" && (age < 30 || age > 34)) {
+          return { ok: false, reason: `Player is ${age} years old. This tournament requires 30-34 age bracket.`, id };
+        }
+        if (ageRule === "O35" && age < 35) {
+          return { ok: false, reason: `Player is ${age} years old. This tournament requires 35 and over.`, id };
+        }
+      }
+    }
+
+    // ✅ All checks passed - create player
     setPlayers((prev) => [
       ...(prev ?? []),
       {
@@ -1919,6 +2200,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       },
     ]);
 
+    console.log("✅ Player added successfully:", fullName, "- ID:", id);
     return { ok: true, id };
   };
 
@@ -2157,7 +2439,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const toggleRosterLock = (tournamentId: string) => {
     const id = String(tournamentId ?? "");
     setTournaments((prev) =>
-      prev.map((t: any) => (t.id === id ? { ...t, rosterLocked: !t.rosterLocked } : t))
+      prev.map((t) => (t.id === id ? { ...t, rosterLocked: !t.rosterLocked } : t))
     );
   };
 
@@ -2167,7 +2449,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     repName: string;
     repPhone: string;
   }) => {
-    const tournament = tournaments.find((t: any) => t.id === input.tournamentId);
+    const tournament = tournaments.find(t => t.id === input.tournamentId);
     if (!tournament) return;
     
     const teamId = createTeam({
@@ -2200,7 +2482,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       return { ok: false, reason: "Can only transfer within the same tournament" };
     }
 
-    const tournament = tournaments.find((t: any) => t.id === player.tournamentId);
+    const tournament = tournaments.find(t => t.id === player.tournamentId);
     if (tournament?.rosterLocked) {
       return { ok: false, reason: "Roster is locked. Cannot transfer players." };
     }
@@ -2228,7 +2510,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const setMatchLive = (matchId: string, isLive: boolean) => {
     setMatches((prev) =>
-      prev.map((m: any) => (m.id === matchId ? { ...m, isLive, status: isLive ? "LIVE" as MatchStatus : m.status } : m))
+      prev.map((m) => (m.id === matchId ? { ...m, isLive, status: isLive ? "LIVE" as MatchStatus : m.status } : m))
     );
     
     if (isLive) {
@@ -2238,9 +2520,18 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateMatchStatus = (matchId: string, status: MatchStatus) => {
+    console.log(`✅ updateMatchStatus: ${matchId} -> ${status}`);
+    setMatches((prev) =>
+      prev.map((m) =>
+        m.id === matchId ? { ...m, status } : m
+      )
+    );
+  };
+
   const tickMatch = (matchId: string, seconds: number) => {
     setMatches((prev) =>
-      prev.map((m: any) => {
+      prev.map((m) => {
         if (m.id === matchId) {
           const clockSec = (m.clockSec ?? 0) + seconds;
           return { ...m, clockSec };
@@ -2252,15 +2543,14 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const resetMatchClock = (matchId: string) => {
     setMatches((prev) =>
-      prev.map((m: any) =>
+      prev.map((m) =>
         m.id === matchId ? { ...m, clockSec: 0, isLive: false, status: "SCHEDULED" as MatchStatus } : m
       )
     );
   };
 
-  // ENHANCED logMatchEvent with auto-fine creation
   const logMatchEvent = (input: { matchId: string; type: LoggedEventType; teamId: string; playerId?: string }) => {
-    const match = matches.find((m: any) => m.id === input.matchId);
+    const match = matches.find(m => m.id === input.matchId);
     const clockSec = match?.clockSec ?? 0;
     const minute = Math.min(90, Math.floor(clockSec / 60));
     
@@ -2272,7 +2562,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       minute,
     });
 
-    // Create fine for yellow or red card
     if ((input.type === "YELLOW" || input.type === "RED") && input.playerId) {
       const player = players.find(p => p.id === input.playerId);
       if (player) {
@@ -2364,7 +2653,6 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     archiveTournamentTemplate,
     restoreTournamentTemplate,
 
-    // Team Eligibility & Fines
     teamEligibility,
     cardFines,
     getTeamEligibility,
@@ -2376,6 +2664,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     getTeamUnpaidFines,
     canTeamPlayMatch,
     validateMatchEligibility,
+
+    isPlayerUnderaged,
+    getTeamUnderagedPlayers,
+    canAddUnderagedPlayer,
+    validateFieldLineup,
+    canModifyRoster,
 
     getTeamsForTournament,
     getPlayersForTeam,
@@ -2402,6 +2696,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     transferPlayer,
 
     setMatchLive,
+    updateMatchStatus,
     tickMatch,
     resetMatchClock,
     logMatchEvent,

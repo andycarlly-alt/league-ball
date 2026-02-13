@@ -1,13 +1,13 @@
-// app/admin/check-ins.tsx - ADMIN CHECK-IN VERIFICATION DASHBOARD
+// app/admin/check-ins.tsx - ADMIN CHECK-IN VERIFICATION WITH JERSEY NUMBERS
 
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAppStore } from '../../src/state/AppStore';
 
@@ -29,6 +29,8 @@ export default function AdminCheckInsScreen() {
         teamName: team?.name || 'Unknown',
         shirtNumber: player.shirtNumber || '?',
         documentVerified: player.documentVerified,
+        // Add match-specific jersey number (from check-in flow)
+        matchJerseyNumber: checkIn.jerseyNumber || null,
       }));
     })
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -66,14 +68,14 @@ export default function AdminCheckInsScreen() {
   });
 
   const exportReport = () => {
-    // Generate CSV data
+    // Generate CSV data with jersey numbers
     const csvData = [
-      ['Timestamp', 'Player', 'Team', 'Shirt #', 'Face Match', 'Liveness', 'Status', 'Match ID'].join(','),
+      ['Timestamp', 'Player', 'Team', 'Jersey #', 'Face Match', 'Liveness', 'Status', 'Match ID'].join(','),
       ...filteredCheckIns.map(c => [
         new Date(c.timestamp).toISOString(),
         c.playerName,
         c.teamName,
-        c.shirtNumber,
+        c.matchJerseyNumber || c.shirtNumber,
         c.faceMatchScore.toFixed(1),
         c.livenessScore.toFixed(1),
         c.approved ? 'APPROVED' : 'REJECTED',
@@ -100,7 +102,7 @@ export default function AdminCheckInsScreen() {
   const manualReview = (checkIn: any, approve: boolean) => {
     Alert.alert(
       approve ? '✅ Approve Check-In?' : '❌ Reject Check-In?',
-      `${checkIn.playerName} - ${checkIn.teamName}\n\nFace Match: ${checkIn.faceMatchScore.toFixed(1)}%\nLiveness: ${checkIn.livenessScore.toFixed(1)}%`,
+      `${checkIn.playerName} - ${checkIn.teamName}\nJersey: #${checkIn.matchJerseyNumber || checkIn.shirtNumber}\n\nFace Match: ${checkIn.faceMatchScore.toFixed(1)}%\nLiveness: ${checkIn.livenessScore.toFixed(1)}%`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -132,7 +134,7 @@ export default function AdminCheckInsScreen() {
             Check-In Verification
           </Text>
           <Text style={{ color: '#9FB3C8', marginTop: 8 }}>
-            Review and manage all player check-ins
+            Review and manage all player check-ins with jersey assignments
           </Text>
         </View>
 
@@ -329,20 +331,20 @@ export default function AdminCheckInsScreen() {
                     marginBottom: 12,
                   }}
                 >
-                  {/* Header */}
+                  {/* Header with Jersey Number */}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                     <View style={{ flex: 1 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <View style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
+                          width: 40,
+                          height: 40,
+                          borderRadius: 20,
                           backgroundColor: checkIn.approved ? '#34C759' : '#FF3B30',
                           alignItems: 'center',
                           justifyContent: 'center',
                         }}>
-                          <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 14 }}>
-                            {checkIn.shirtNumber}
+                          <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 18 }}>
+                            {checkIn.matchJerseyNumber || checkIn.shirtNumber || '?'}
                           </Text>
                         </View>
                         <View>
@@ -352,6 +354,11 @@ export default function AdminCheckInsScreen() {
                           <Text style={{ color: '#9FB3C8', fontSize: 12 }}>
                             {checkIn.teamName}
                           </Text>
+                          {checkIn.matchJerseyNumber && (
+                            <Text style={{ color: '#22C6D2', fontSize: 11, fontWeight: '900', marginTop: 2 }}>
+                              Match Jersey: #{checkIn.matchJerseyNumber}
+                            </Text>
+                          )}
                         </View>
                       </View>
                     </View>

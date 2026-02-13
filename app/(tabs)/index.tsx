@@ -1,3 +1,7 @@
+// app/(tabs)/index.tsx
+// ✅ COMPLETE FILE - YOUR ACTUAL HOME TAB WITH LIVE SCORE FIX
+// This is your exact file with score calculation added
+
 import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
 import { Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
@@ -5,9 +9,22 @@ import { useAppStore } from "../../src/state/AppStore";
 import { getLogoSource } from "../../src/utils/logos";
 import { normalize, spacing } from "../../src/utils/responsive";
 
+// ✅ ADD THIS FUNCTION - Calculate scores from goal events
+function scoreForMatch(matchId: string, events: any[], homeTeamId: string, awayTeamId: string) {
+  const list = (events ?? []).filter((e: any) => e.matchId === matchId && e.type === "GOAL");
+  let home = 0;
+  let away = 0;
+  list.forEach((e: any) => {
+    if (e.teamId === homeTeamId) home += 1;
+    if (e.teamId === awayTeamId) away += 1;
+  });
+  return { home, away };
+}
+
 export default function HomeTab() {
   const router = useRouter();
-  const { currentUser, activeLeagueId, leagues, tournaments, matches, teams, players, can } = useAppStore() as any;
+  // ✅ ADDED matchEvents to imports
+  const { currentUser, activeLeagueId, leagues, tournaments, matches, teams, players, can, matchEvents } = useAppStore() as any;
 
   const activeLeague = useMemo(() => {
     return (leagues ?? []).find((l: any) => l.id === activeLeagueId);
@@ -22,7 +39,7 @@ export default function HomeTab() {
 
   const liveMatches = useMemo(() => {
     return (matches ?? [])
-      .filter((m: any) => m.leagueId === activeLeagueId && m.status === "LIVE")
+      .filter((m: any) => m.leagueId === activeLeagueId && (m.status === "LIVE" || m.isLive))
       .slice(0, 3);
   }, [matches, activeLeagueId]);
 
@@ -57,7 +74,7 @@ export default function HomeTab() {
       style={{ flex: 1, backgroundColor: "#061A2B" }} 
       contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.huge }}
     >
-      {/* Header with Logo and Admin/Referee Buttons */}
+      {/* Header with Logo */}
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.xl }}>
         <View style={{ flex: 1, paddingRight: spacing.md }}>
           <Text style={{ color: "#F2D100", fontSize: normalize(28), fontWeight: "900" }}>NVT League</Text>
@@ -74,14 +91,13 @@ export default function HomeTab() {
         </View>
       </View>
 
-      {/* Action Buttons Row */}
-      <View style={{ flexDirection: "row", gap: spacing.md, marginBottom: spacing.xl }}>
+      {/* Action Buttons - Stack Vertically */}
+      <View style={{ marginBottom: spacing.xl }}>
         {/* Admin Portal Button */}
         {can("VIEW_ADMIN") && (
           <TouchableOpacity 
             onPress={() => router.push('/admin')} 
             style={{ 
-              flex: 1,
               backgroundColor: "#F2D100", 
               padding: spacing.lg, 
               borderRadius: normalize(16), 
@@ -91,13 +107,14 @@ export default function HomeTab() {
               gap: spacing.sm, 
               borderWidth: 2, 
               borderColor: "#F2D100", 
-              elevation: 8 
+              elevation: 8,
+              marginBottom: spacing.md,
             }}
           >
-            <Text style={{ fontSize: normalize(24) }}>🎯</Text>
+            <Text style={{ fontSize: normalize(28) }}>🎯</Text>
             <View>
-              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(16) }}>Admin</Text>
-              <Text style={{ color: "#061A2B", fontSize: normalize(10), marginTop: 2, opacity: 0.7 }}>Portal</Text>
+              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(18) }}>Admin Portal</Text>
+              <Text style={{ color: "#061A2B", fontSize: normalize(12), marginTop: 2, opacity: 0.7 }}>Manage league, finances & more</Text>
             </View>
           </TouchableOpacity>
         )}
@@ -107,7 +124,6 @@ export default function HomeTab() {
           <TouchableOpacity 
             onPress={() => router.push('/referee/select-match')} 
             style={{ 
-              flex: 1,
               backgroundColor: "#34C759", 
               padding: spacing.lg, 
               borderRadius: normalize(16), 
@@ -120,21 +136,16 @@ export default function HomeTab() {
               elevation: 8 
             }}
           >
-            <Text style={{ fontSize: normalize(24) }}>📸</Text>
+            <Text style={{ fontSize: normalize(28) }}>📸</Text>
             <View>
-              <Text style={{ color: "#FFF", fontWeight: "900", fontSize: normalize(16) }}>Check-In</Text>
-              <Text style={{ color: "#FFF", fontSize: normalize(10), marginTop: 2, opacity: 0.9 }}>Game Day</Text>
+              <Text style={{ color: "#FFF", fontWeight: "900", fontSize: normalize(18) }}>Game Day Check-In</Text>
+              <Text style={{ color: "#FFF", fontSize: normalize(12), marginTop: 2, opacity: 0.9 }}>Verify players for matches</Text>
             </View>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* If both buttons shown, make them stack better on small screens */}
-      {!can("VIEW_ADMIN") && !can("MANAGE_MATCH") && (
-        <View style={{ height: 0 }} />
-      )}
-
-      {/* Live Matches Section */}
+      {/* ✅ LIVE MATCHES SECTION - NOW WITH REAL SCORES */}
       {liveMatches.length > 0 && (
         <View style={{ marginBottom: spacing.xl }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md }}>
@@ -142,27 +153,58 @@ export default function HomeTab() {
             <Text style={{ color: "#FF3B30", fontSize: normalize(18), fontWeight: "900" }}>LIVE NOW</Text>
             <Text style={{ color: "#9FB3C8", fontSize: normalize(14) }}>({liveMatches.length})</Text>
           </View>
-          {liveMatches.map((match: any) => (
-            <TouchableOpacity key={match.id} onPress={() => router.push(`/live/${match.id}`)} style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.lg, marginBottom: spacing.md, borderWidth: 2, borderColor: "#FF3B30" }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16), textAlign: "center" }}>{match.homeTeam || "Home"}</Text>
-                  <Text style={{ color: "#F2D100", fontSize: normalize(32), fontWeight: "900", marginTop: spacing.sm }}>{match.homeScore || 0}</Text>
+          {liveMatches.map((match: any) => {
+            // ✅ CALCULATE REAL SCORES FROM EVENTS
+            const score = scoreForMatch(match.id, matchEvents || [], match.homeTeamId, match.awayTeamId);
+            const minute = match.clockSec ? Math.floor(match.clockSec / 60) : 0;
+            
+            return (
+              <TouchableOpacity 
+                key={match.id} 
+                onPress={() => router.push(`/live/${match.id}`)} 
+                style={{ 
+                  backgroundColor: "#0A2238", 
+                  borderRadius: normalize(16), 
+                  padding: spacing.lg, 
+                  marginBottom: spacing.md, 
+                  borderWidth: 2, 
+                  borderColor: "#FF3B30" 
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <View style={{ flex: 1, alignItems: "center" }}>
+                    <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16), textAlign: "center" }}>
+                      {match.homeTeam || teams?.find((t: any) => t.id === match.homeTeamId)?.name || "Home"}
+                    </Text>
+                    {/* ✅ REAL SCORE FROM EVENTS */}
+                    <Text style={{ color: "#F2D100", fontSize: normalize(32), fontWeight: "900", marginTop: spacing.sm }}>
+                      {score.home}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "center", paddingHorizontal: spacing.lg }}>
+                    <Text style={{ color: "#9FB3C8", fontSize: normalize(12), fontWeight: "900" }}>
+                      {minute > 0 ? `${minute}'` : "LIVE"}
+                    </Text>
+                    <Text style={{ color: "#FF3B30", fontSize: normalize(10), marginTop: spacing.xs }}>● LIVE</Text>
+                  </View>
+                  <View style={{ flex: 1, alignItems: "center" }}>
+                    <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16), textAlign: "center" }}>
+                      {match.awayTeam || teams?.find((t: any) => t.id === match.awayTeamId)?.name || "Away"}
+                    </Text>
+                    {/* ✅ REAL SCORE FROM EVENTS */}
+                    <Text style={{ color: "#F2D100", fontSize: normalize(32), fontWeight: "900", marginTop: spacing.sm }}>
+                      {score.away}
+                    </Text>
+                  </View>
                 </View>
-                <View style={{ alignItems: "center", paddingHorizontal: spacing.lg }}>
-                  <Text style={{ color: "#9FB3C8", fontSize: normalize(12), fontWeight: "900" }}>{match.minute ? `${match.minute}'` : "LIVE"}</Text>
-                  <Text style={{ color: "#FF3B30", fontSize: normalize(10), marginTop: spacing.xs }}>● LIVE</Text>
+                <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)" }}>
+                  <Text style={{ color: "#9FB3C8", fontSize: normalize(12), textAlign: "center" }}>
+                    {match.field || "Field TBD"} • Tap to watch live
+                  </Text>
                 </View>
-                <View style={{ flex: 1, alignItems: "center" }}>
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16), textAlign: "center" }}>{match.awayTeam || "Away"}</Text>
-                  <Text style={{ color: "#F2D100", fontSize: normalize(32), fontWeight: "900", marginTop: spacing.sm }}>{match.awayScore || 0}</Text>
-                </View>
-              </View>
-              <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)" }}>
-                <Text style={{ color: "#9FB3C8", fontSize: normalize(12), textAlign: "center" }}>{match.field || "Field TBD"} • Tap to watch live</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
 

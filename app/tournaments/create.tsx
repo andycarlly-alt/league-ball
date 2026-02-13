@@ -1,4 +1,4 @@
-// app/tournaments/create.tsx - ENHANCED WITH TEMPLATE SUPPORT
+// app/tournaments/create.tsx - COMPLETE WITH UNDERAGE RULES
 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -22,6 +22,7 @@ export default function CreateTournamentScreen() {
     [templateId, tournamentTemplates]
   );
 
+  // Basic fields
   const [name, setName] = useState("");
   const [location, setLocation] = useState(selectedTemplate?.defaultLocation || "");
   const [startDate, setStartDate] = useState("");
@@ -34,6 +35,13 @@ export default function CreateTournamentScreen() {
   const [maxRosterSize, setMaxRosterSize] = useState(String(selectedTemplate?.maxRosterSize || 18));
   const [maxTeams, setMaxTeams] = useState(String(selectedTemplate?.maxTeams || 24));
   const [matchDuration, setMatchDuration] = useState(String(selectedTemplate?.matchDuration || 90));
+
+  // ✅ NEW: Underage rules state
+  const [underageEnabled, setUnderageEnabled] = useState(false);
+  const [ageThreshold, setAgeThreshold] = useState("35");
+  const [maxOnRoster, setMaxOnRoster] = useState("0");
+  const [maxOnField, setMaxOnField] = useState("");
+  const [lockStage, setLockStage] = useState<"GROUP_STAGE" | "KNOCKOUT" | "SEMI_FINALS" | "NEVER">("NEVER");
 
   const canManage = can("MANAGE_TOURNAMENTS");
 
@@ -79,7 +87,29 @@ export default function CreateTournamentScreen() {
       return;
     }
 
-    // Create tournament
+    // ✅ NEW: Validate underage rules if enabled
+    if (underageEnabled) {
+      const threshold = parseInt(ageThreshold);
+      const maxRoster = parseInt(maxOnRoster);
+      const maxField = maxOnField ? parseInt(maxOnField) : undefined;
+
+      if (isNaN(threshold) || threshold < 18 || threshold > 60) {
+        Alert.alert("Invalid Age Threshold", "Age threshold must be between 18 and 60");
+        return;
+      }
+
+      if (isNaN(maxRoster) || maxRoster < 0) {
+        Alert.alert("Invalid Roster Limit", "Please enter a valid max underaged players on roster (0 or more)");
+        return;
+      }
+
+      if (maxField !== undefined && (isNaN(maxField) || maxField < 0 || maxField > maxRoster)) {
+        Alert.alert("Invalid Field Limit", "Max on field must be between 0 and max on roster");
+        return;
+      }
+    }
+
+    // Create tournament with underage rules
     const newTournament = {
       name: name.trim(),
       location: location.trim(),
@@ -93,13 +123,22 @@ export default function CreateTournamentScreen() {
       durationSec: duration * 60,
       leagueId: activeLeagueId,
       status: "DRAFT",
+      // ✅ NEW: Include underage rules
+      underageRules: underageEnabled ? {
+        enabled: true,
+        ageThreshold: parseInt(ageThreshold),
+        maxUnderagedOnRoster: parseInt(maxOnRoster),
+        maxUnderagedOnField: maxOnField ? parseInt(maxOnField) : undefined,
+        rosterLockStage: lockStage,
+      } : undefined,
     };
 
-    const tournamentId = createTournament(newTournament);
+    const result = createTournament(newTournament);
+    const tournamentId = result.id;
 
     Alert.alert(
       "Tournament Created! 🎉",
-      `${newTournament.name} has been created.\n\nYou can now open registration and manage teams.`,
+      `${newTournament.name} has been created.${underageEnabled ? '\n\nUnderage rules are active and will be enforced automatically.' : ''}\n\nYou can now open registration and manage teams.`,
       [
         {
           text: "View Tournament",
@@ -107,6 +146,42 @@ export default function CreateTournamentScreen() {
         },
       ]
     );
+  };
+
+  // ✅ Quick template handlers
+  const applyNVTStrict = () => {
+    setUnderageEnabled(true);
+    setAgeThreshold("35");
+    setMaxOnRoster("0");
+    setMaxOnField("");
+    setLockStage("NEVER");
+    setAgeRuleLabel("35+");
+  };
+
+  const applyNorthEast = () => {
+    setUnderageEnabled(true);
+    setAgeThreshold("35");
+    setMaxOnRoster("3");
+    setMaxOnField("");
+    setLockStage("NEVER");
+    setAgeRuleLabel("35+");
+  };
+
+  const applyDMV = () => {
+    setUnderageEnabled(true);
+    setAgeThreshold("35");
+    setMaxOnRoster("5");
+    setMaxOnField("3");
+    setLockStage("GROUP_STAGE");
+    setAgeRuleLabel("35+");
+  };
+
+  const applyNoRules = () => {
+    setUnderageEnabled(false);
+    setAgeThreshold("35");
+    setMaxOnRoster("0");
+    setMaxOnField("");
+    setLockStage("NEVER");
   };
 
   return (
@@ -117,19 +192,21 @@ export default function CreateTournamentScreen() {
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={{ color: "#22C6D2", fontSize: 16 }}>← Back</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.push('/league/tournament-templates')}
-            style={{
-              backgroundColor: "#0A2238",
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: "rgba(255,255,255,0.1)",
-            }}
-          >
-            <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 13 }}>📋 Templates</Text>
-          </TouchableOpacity>
+          {tournamentTemplates && tournamentTemplates.length > 0 && (
+            <TouchableOpacity
+              onPress={() => router.push('/league/tournament-templates')}
+              style={{
+                backgroundColor: "#0A2238",
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.1)",
+              }}
+            >
+              <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 13 }}>📋 Templates</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <Text style={{ color: "#F2D100", fontSize: 28, fontWeight: "900", marginBottom: 8 }}>
@@ -166,7 +243,7 @@ export default function CreateTournamentScreen() {
           </View>
         )}
 
-        {!selectedTemplate && (tournamentTemplates || []).length > 0 && (
+        {!selectedTemplate && tournamentTemplates && tournamentTemplates.length > 0 && (
           <View style={{
             backgroundColor: "rgba(34,198,210,0.1)",
             borderRadius: 12,
@@ -318,7 +395,7 @@ export default function CreateTournamentScreen() {
           {/* Age Rule */}
           <View>
             <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 8 }}>
-              Age Rule *
+              Age Rule Label *
             </Text>
             <TextInput
               value={ageRuleLabel}
@@ -430,6 +507,303 @@ export default function CreateTournamentScreen() {
             />
           </View>
 
+          {/* ✅ NEW: Underage Player Rules Section */}
+          <View style={{ marginTop: 10 }}>
+            <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 20, marginBottom: 12 }}>
+              Underage Player Rules
+            </Text>
+            <Text style={{ color: "#9FB3C8", fontSize: 14, marginBottom: 16, lineHeight: 20 }}>
+              Set age restrictions for your tournament. Choose a quick template or customize your own rules.
+            </Text>
+            
+            {/* Quick Templates */}
+            <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
+              Quick Setup:
+            </Text>
+            
+            <View style={{ gap: 10, marginBottom: 20 }}>
+              {/* NVT Strict */}
+              <TouchableOpacity
+                onPress={applyNVTStrict}
+                style={{
+                  backgroundColor: underageEnabled && maxOnRoster === "0" ? "rgba(211,59,59,0.2)" : "rgba(211,59,59,0.1)",
+                  borderRadius: 12,
+                  padding: 14,
+                  borderWidth: 2,
+                  borderColor: underageEnabled && maxOnRoster === "0" ? "#D33B3B" : "rgba(211,59,59,0.3)",
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                  <Text style={{ fontSize: 20, marginRight: 8 }}>🔥</Text>
+                  <Text style={{ color: "#FF3B30", fontWeight: "900", fontSize: 15 }}>
+                    STRICT 35+ ONLY (like NVT)
+                  </Text>
+                </View>
+                <Text style={{ color: "#EAF2FF", fontSize: 13, lineHeight: 18 }}>
+                  • Zero underaged players allowed{"\n"}
+                  • All players must be 35+{"\n"}
+                  • Strictest enforcement
+                </Text>
+                {underageEnabled && maxOnRoster === "0" && (
+                  <View style={{ marginTop: 8, backgroundColor: "rgba(255,255,255,0.1)", padding: 6, borderRadius: 6 }}>
+                    <Text style={{ color: "#34C759", fontSize: 11, fontWeight: "900" }}>✓ SELECTED</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              
+              {/* North East */}
+              <TouchableOpacity
+                onPress={applyNorthEast}
+                style={{
+                  backgroundColor: underageEnabled && maxOnRoster === "3" && !maxOnField ? "rgba(242,209,0,0.2)" : "#0A2238",
+                  borderRadius: 12,
+                  padding: 14,
+                  borderWidth: 2,
+                  borderColor: underageEnabled && maxOnRoster === "3" && !maxOnField ? "#F2D100" : "rgba(242,209,0,0.3)",
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                  <Text style={{ fontSize: 20, marginRight: 8 }}>⚠️</Text>
+                  <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 15 }}>
+                    North East Rules
+                  </Text>
+                </View>
+                <Text style={{ color: "#EAF2FF", fontSize: 13, lineHeight: 18 }}>
+                  • Max 3 under-35 on roster{"\n"}
+                  • Unlimited on field at once{"\n"}
+                  • Moderate enforcement
+                </Text>
+                {underageEnabled && maxOnRoster === "3" && !maxOnField && (
+                  <View style={{ marginTop: 8, backgroundColor: "rgba(255,255,255,0.1)", padding: 6, borderRadius: 6 }}>
+                    <Text style={{ color: "#34C759", fontSize: 11, fontWeight: "900" }}>✓ SELECTED</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              
+              {/* DMV */}
+              <TouchableOpacity
+                onPress={applyDMV}
+                style={{
+                  backgroundColor: underageEnabled && maxOnRoster === "5" && maxOnField === "3" ? "rgba(34,198,210,0.2)" : "#0A2238",
+                  borderRadius: 12,
+                  padding: 14,
+                  borderWidth: 2,
+                  borderColor: underageEnabled && maxOnRoster === "5" && maxOnField === "3" ? "#22C6D2" : "rgba(34,198,210,0.3)",
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                  <Text style={{ fontSize: 20, marginRight: 8 }}>🏆</Text>
+                  <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 15 }}>
+                    DMV League Rules
+                  </Text>
+                </View>
+                <Text style={{ color: "#EAF2FF", fontSize: 13, lineHeight: 18 }}>
+                  • Max 5 under-35 on roster{"\n"}
+                  • Max 3 on field at once{"\n"}
+                  • Roster locks after group stage
+                </Text>
+                {underageEnabled && maxOnRoster === "5" && maxOnField === "3" && (
+                  <View style={{ marginTop: 8, backgroundColor: "rgba(255,255,255,0.1)", padding: 6, borderRadius: 6 }}>
+                    <Text style={{ color: "#34C759", fontSize: 11, fontWeight: "900" }}>✓ SELECTED</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              
+              {/* No Rules */}
+              <TouchableOpacity
+                onPress={applyNoRules}
+                style={{
+                  backgroundColor: !underageEnabled ? "rgba(159,179,200,0.2)" : "#0A2238",
+                  borderRadius: 12,
+                  padding: 14,
+                  borderWidth: 2,
+                  borderColor: !underageEnabled ? "#9FB3C8" : "rgba(159,179,200,0.3)",
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                  <Text style={{ fontSize: 20, marginRight: 8 }}>⭕</Text>
+                  <Text style={{ color: "#9FB3C8", fontWeight: "900", fontSize: 15 }}>
+                    No Underage Rules
+                  </Text>
+                </View>
+                <Text style={{ color: "#EAF2FF", fontSize: 13, lineHeight: 18 }}>
+                  • All ages allowed{"\n"}
+                  • No restrictions{"\n"}
+                  • Open tournament
+                </Text>
+                {!underageEnabled && (
+                  <View style={{ marginTop: 8, backgroundColor: "rgba(255,255,255,0.1)", padding: 6, borderRadius: 6 }}>
+                    <Text style={{ color: "#34C759", fontSize: 11, fontWeight: "900" }}>✓ SELECTED</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Custom Configuration */}
+            {underageEnabled && (
+              <View style={{
+                backgroundColor: "#0A2238",
+                borderRadius: 12,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: "rgba(242,209,0,0.3)",
+              }}>
+                <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16, marginBottom: 14 }}>
+                  Custom Configuration
+                </Text>
+
+                {/* Age Threshold */}
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 14, marginBottom: 8 }}>
+                    Age Threshold
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <TextInput
+                      value={ageThreshold}
+                      onChangeText={setAgeThreshold}
+                      placeholder="35"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      keyboardType="number-pad"
+                      style={{
+                        flex: 1,
+                        backgroundColor: "#0B2842",
+                        color: "#EAF2FF",
+                        borderRadius: 10,
+                        padding: 12,
+                        fontSize: 16,
+                        borderWidth: 1,
+                        borderColor: "rgba(255,255,255,0.1)",
+                      }}
+                    />
+                    <Text style={{ color: "#9FB3C8", fontSize: 14 }}>years old</Text>
+                  </View>
+                  <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+                    Players under this age are considered "underaged"
+                  </Text>
+                </View>
+
+                {/* Max on Roster */}
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 14, marginBottom: 8 }}>
+                    Max Underaged on Roster
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <TextInput
+                      value={maxOnRoster}
+                      onChangeText={setMaxOnRoster}
+                      placeholder="0"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      keyboardType="number-pad"
+                      style={{
+                        flex: 1,
+                        backgroundColor: "#0B2842",
+                        color: "#EAF2FF",
+                        borderRadius: 10,
+                        padding: 12,
+                        fontSize: 16,
+                        borderWidth: 1,
+                        borderColor: "rgba(255,255,255,0.1)",
+                      }}
+                    />
+                    <Text style={{ color: "#9FB3C8", fontSize: 14 }}>players</Text>
+                  </View>
+                  <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+                    0 = strict (no underaged allowed), 3-5 = typical
+                  </Text>
+                </View>
+
+                {/* Max on Field */}
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 14, marginBottom: 8 }}>
+                    Max Underaged on Field (Optional)
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <TextInput
+                      value={maxOnField}
+                      onChangeText={setMaxOnField}
+                      placeholder="Leave empty for no limit"
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                      keyboardType="number-pad"
+                      style={{
+                        flex: 1,
+                        backgroundColor: "#0B2842",
+                        color: "#EAF2FF",
+                        borderRadius: 10,
+                        padding: 12,
+                        fontSize: 16,
+                        borderWidth: 1,
+                        borderColor: "rgba(255,255,255,0.1)",
+                      }}
+                    />
+                    <Text style={{ color: "#9FB3C8", fontSize: 14 }}>players</Text>
+                  </View>
+                  <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+                    Additional restriction for simultaneous field presence
+                  </Text>
+                </View>
+
+                {/* Roster Lock Stage */}
+                <View>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 14, marginBottom: 8 }}>
+                    Roster Lock Stage
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                    {(["NEVER", "GROUP_STAGE", "KNOCKOUT", "SEMI_FINALS"] as const).map((stage) => (
+                      <TouchableOpacity
+                        key={stage}
+                        onPress={() => setLockStage(stage)}
+                        style={{
+                          backgroundColor: lockStage === stage ? "#F2D100" : "#0B2842",
+                          paddingVertical: 10,
+                          paddingHorizontal: 14,
+                          borderRadius: 10,
+                          borderWidth: 1,
+                          borderColor: lockStage === stage ? "#F2D100" : "rgba(255,255,255,0.1)",
+                        }}
+                      >
+                        <Text style={{
+                          color: lockStage === stage ? "#061A2B" : "#EAF2FF",
+                          fontWeight: "900",
+                          fontSize: 13,
+                        }}>
+                          {stage === "NEVER" ? "Never" : stage.replace(/_/g, " ")}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 6 }}>
+                    When should rosters become locked from changes?
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Selected Rules Display */}
+            {underageEnabled && (
+              <View style={{
+                marginTop: 12,
+                backgroundColor: "rgba(52,199,89,0.1)",
+                borderRadius: 12,
+                padding: 14,
+                borderWidth: 1,
+                borderColor: "rgba(52,199,89,0.3)",
+              }}>
+                <Text style={{ color: "#34C759", fontWeight: "900", fontSize: 14, marginBottom: 8 }}>
+                  ✓ Underage Rules Active
+                </Text>
+                <Text style={{ color: "#EAF2FF", fontSize: 13, lineHeight: 20 }}>
+                  • Age Threshold: Under {ageThreshold}{"\n"}
+                  • Max on Roster: {maxOnRoster === "0" ? "NONE (Strict)" : maxOnRoster}{"\n"}
+                  {maxOnField && `• Max on Field: ${maxOnField}${"\n"}`}
+                  • Roster Lock: {lockStage === "NEVER" ? "Never" : `After ${lockStage.replace(/_/g, " ")}`}
+                </Text>
+                <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 8, fontStyle: "italic" }}>
+                  Rules will be enforced automatically during player registration
+                </Text>
+              </View>
+            )}
+          </View>
+
           {/* Create Button */}
           <TouchableOpacity
             onPress={validateAndCreate}
@@ -438,6 +812,7 @@ export default function CreateTournamentScreen() {
               borderRadius: 16,
               padding: 18,
               alignItems: "center",
+              marginTop: 10,
               borderWidth: 2,
               borderColor: name.trim() ? "#34C759" : "rgba(255,255,255,0.1)",
             }}
