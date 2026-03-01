@@ -1,9 +1,10 @@
-// app/(tabs)/matches.tsx - ENHANCED MATCHES TAB
+// app/(tabs)/matches.tsx - FIXED NAVIGATION
 import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Alert, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAppStore } from "../../src/state/AppStore";
 import { getLogoSource } from "../../src/utils/logos";
+import { isWeb, normalize, spacing } from "../../src/utils/responsive";
 
 type Mode = "RESULTS" | "FIXTURES" | "STANDINGS";
 
@@ -82,7 +83,6 @@ export default function MatchesTab() {
     return leagueMatches.filter((m: any) => String(m.tournamentId) === String(activeTournamentId));
   }, [leagueMatches, activeTournamentId]);
 
-  // Separate matches by status
   const liveMatches = useMemo(() => {
     return filteredMatches.filter((m: any) => isLive(m));
   }, [filteredMatches]);
@@ -112,7 +112,6 @@ export default function MatchesTab() {
 
   const teamById = (id: string) => (leagueTeams ?? []).find((t: any) => String(t.id) === String(id));
 
-  // Enhanced create match with modal
   const handleCreateMatch = () => {
     if (!selectedHomeTeam || !selectedAwayTeam) {
       Alert.alert("Select Teams", "Please select both home and away teams");
@@ -173,7 +172,7 @@ export default function MatchesTab() {
               "Match Created! ✅",
               "Match has been scheduled",
               [
-                { text: "View Match", onPress: () => matchId && router.push(`/live/${matchId}`) },
+                { text: "View Match", onPress: () => matchId && router.push(`/matches/${matchId}`) },
                 { text: "OK" },
               ]
             );
@@ -183,7 +182,6 @@ export default function MatchesTab() {
     );
   };
 
-  // Quick match for testing
   const createQuickMatch = () => {
     const tourn =
       activeTournamentId !== "all"
@@ -203,7 +201,6 @@ export default function MatchesTab() {
       return;
     }
 
-    // Select random teams
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
     const home = shuffled[0];
     const away = shuffled[1];
@@ -230,14 +227,13 @@ export default function MatchesTab() {
         "Quick Match Created!",
         `${home.name} vs ${away.name}`,
         [
-          { text: "View Match", onPress: () => router.push(`/live/${id}`) },
+          { text: "View Match", onPress: () => router.push(`/matches/${id}`) },
           { text: "OK" },
         ]
       );
     }
   };
 
-  // Auto-calculated standings
   const standingsRows = useMemo(() => {
     const tid =
       activeTournamentId === "all" ? String(leagueTournaments?.[0]?.id ?? "") : String(activeTournamentId);
@@ -308,7 +304,6 @@ export default function MatchesTab() {
 
     const rows = Object.values(base).map((r: any) => ({ ...r, GD: r.GF - r.GA }));
 
-    // Sort by: Points -> Goal Difference -> Goals For -> Name
     rows.sort((a: any, b: any) => {
       if (b.PTS !== a.PTS) return b.PTS - a.PTS;
       if (b.GD !== a.GD) return b.GD - a.GD;
@@ -323,15 +318,15 @@ export default function MatchesTab() {
     <TouchableOpacity onPress={onPress} style={{ flex: 1 }}>
       <View
         style={{
-          paddingVertical: 10,
-          borderRadius: 12,
+          paddingVertical: normalize(10),
+          borderRadius: normalize(12),
           alignItems: "center",
           backgroundColor: active ? "rgba(242,209,0,0.22)" : "rgba(255,255,255,0.06)",
           borderWidth: 1,
           borderColor: active ? "rgba(242,209,0,0.45)" : "rgba(255,255,255,0.08)",
         }}
       >
-        <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>{label}</Text>
+        <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(14) }}>{label}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -342,56 +337,75 @@ export default function MatchesTab() {
   }, [leagueTeams, activeTournamentId]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#061A2B", padding: 16 }}>
+    <View style={{ 
+      flex: 1, 
+      backgroundColor: "#061A2B", 
+      padding: spacing.lg,
+      ...(isWeb() && { maxWidth: 1200, marginHorizontal: 'auto' as any, width: '100%' }),
+    }}>
       {/* Header */}
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View style={{ flex: 1, paddingRight: 12 }}>
-          <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>Matches</Text>
-          <Text style={{ color: "#9FB3C8", marginTop: 6 }}>
+        <View style={{ flex: 1, paddingRight: spacing.md }}>
+          <Text style={{ color: "#F2D100", fontSize: normalize(22), fontWeight: "900" }}>Matches</Text>
+          <Text style={{ color: "#9FB3C8", marginTop: spacing.sm, fontSize: normalize(14) }}>
             {liveMatches.length > 0 && `🔴 ${liveMatches.length} Live • `}
             {fixtureMatches.length} Fixtures • {resultMatches.length} Results
           </Text>
         </View>
 
-        <View style={{ flexDirection: "row", gap: 8 }}>
+        <View style={{ flexDirection: "row", gap: spacing.sm }}>
           <TouchableOpacity
             onPress={createQuickMatch}
-            style={{ backgroundColor: "rgba(34,198,210,0.2)", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: "#22C6D2" }}
+            style={{ 
+              backgroundColor: "rgba(34,198,210,0.2)", 
+              paddingVertical: normalize(10), 
+              paddingHorizontal: spacing.md, 
+              borderRadius: normalize(12), 
+              borderWidth: 1, 
+              borderColor: "#22C6D2",
+              ...(isWeb() && { cursor: "pointer" }),
+            }}
           >
-            <Text style={{ color: "#22C6D2", fontWeight: "900" }}>Quick</Text>
+            <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: normalize(14) }}>Quick</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => setShowCreateModal(true)}
-            style={{ backgroundColor: "#F2D100", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12 }}
+            style={{ 
+              backgroundColor: "#F2D100", 
+              paddingVertical: normalize(10), 
+              paddingHorizontal: spacing.md, 
+              borderRadius: normalize(12),
+              ...(isWeb() && { cursor: "pointer" }),
+            }}
           >
-            <Text style={{ color: "#061A2B", fontWeight: "900" }}>+ Match</Text>
+            <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(14) }}>+ Match</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Mode Selector */}
-      <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+      <View style={{ flexDirection: "row", gap: normalize(10), marginTop: spacing.md }}>
         <SegButton label="Fixtures" active={mode === "FIXTURES"} onPress={() => setMode("FIXTURES")} />
         <SegButton label="Results" active={mode === "RESULTS"} onPress={() => setMode("RESULTS")} />
         <SegButton label="Standings" active={mode === "STANDINGS"} onPress={() => setMode("STANDINGS")} />
       </View>
 
       {/* Tournament Filter */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-        <View style={{ flexDirection: "row", gap: 10, paddingRight: 12 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.md }}>
+        <View style={{ flexDirection: "row", gap: normalize(10), paddingRight: spacing.md }}>
           <TouchableOpacity onPress={() => setActiveTournamentId("all")}>
             <View
               style={{
-                paddingVertical: 8,
-                paddingHorizontal: 12,
+                paddingVertical: spacing.sm,
+                paddingHorizontal: spacing.md,
                 borderRadius: 999,
                 backgroundColor: activeTournamentId === "all" ? "rgba(34,198,210,0.22)" : "rgba(255,255,255,0.06)",
                 borderWidth: 1,
                 borderColor: activeTournamentId === "all" ? "#22C6D2" : "rgba(255,255,255,0.08)",
               }}
             >
-              <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>All</Text>
+              <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(14) }}>All</Text>
             </View>
           </TouchableOpacity>
 
@@ -401,15 +415,15 @@ export default function MatchesTab() {
               <TouchableOpacity key={t.id} onPress={() => setActiveTournamentId(String(t.id))}>
                 <View
                   style={{
-                    paddingVertical: 8,
-                    paddingHorizontal: 12,
+                    paddingVertical: spacing.sm,
+                    paddingHorizontal: spacing.md,
                     borderRadius: 999,
                     backgroundColor: active ? "rgba(242,209,0,0.22)" : "rgba(255,255,255,0.06)",
                     borderWidth: 1,
                     borderColor: active ? "rgba(242,209,0,0.45)" : "rgba(255,255,255,0.08)",
                   }}
                 >
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>{t.name ?? "Tournament"}</Text>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(14) }}>{t.name ?? "Tournament"}</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -419,10 +433,10 @@ export default function MatchesTab() {
 
       {/* Live Matches Banner */}
       {liveMatches.length > 0 && mode !== "STANDINGS" && (
-        <View style={{ marginTop: 14, backgroundColor: "rgba(255,59,48,0.1)", borderRadius: 14, padding: 12, borderWidth: 2, borderColor: "#FF3B30" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#FF3B30" }} />
-            <Text style={{ color: "#FF3B30", fontWeight: "900" }}>
+        <View style={{ marginTop: spacing.md, backgroundColor: "rgba(255,59,48,0.1)", borderRadius: normalize(14), padding: spacing.md, borderWidth: 2, borderColor: "#FF3B30" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+            <View style={{ width: normalize(8), height: normalize(8), borderRadius: normalize(4), backgroundColor: "#FF3B30" }} />
+            <Text style={{ color: "#FF3B30", fontWeight: "900", fontSize: normalize(14) }}>
               {liveMatches.length} {liveMatches.length === 1 ? "Match" : "Matches"} LIVE NOW
             </Text>
           </View>
@@ -430,22 +444,22 @@ export default function MatchesTab() {
       )}
 
       {/* Match List */}
-      <ScrollView style={{ marginTop: 14 }} contentContainerStyle={{ paddingBottom: 30, gap: 14 }}>
+      <ScrollView style={{ marginTop: spacing.md }} contentContainerStyle={{ paddingBottom: spacing.huge, gap: spacing.md }}>
         {mode !== "STANDINGS" && !filteredMatches.length ? (
-          <View style={{ backgroundColor: "#0A2238", borderRadius: 16, padding: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", alignItems: "center" }}>
-            <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>No matches yet</Text>
-            <Text style={{ color: "#9FB3C8", marginTop: 8, textAlign: "center" }}>
+          <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.xl, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", alignItems: "center" }}>
+            <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16) }}>No matches yet</Text>
+            <Text style={{ color: "#9FB3C8", marginTop: spacing.sm, textAlign: "center", fontSize: normalize(14) }}>
               Tap "+ Match" to schedule a match
             </Text>
           </View>
         ) : null}
 
         {mode !== "STANDINGS" && Object.keys(byTournament).length === 0 && filteredMatches.length > 0 ? (
-          <View style={{ backgroundColor: "#0A2238", borderRadius: 16, padding: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", alignItems: "center" }}>
-            <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
+          <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.xl, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", alignItems: "center" }}>
+            <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16) }}>
               No {mode === "FIXTURES" ? "fixtures" : "results"}
             </Text>
-            <Text style={{ color: "#9FB3C8", marginTop: 8, textAlign: "center" }}>
+            <Text style={{ color: "#9FB3C8", marginTop: spacing.sm, textAlign: "center", fontSize: normalize(14) }}>
               {mode === "FIXTURES" ? "All matches have been completed" : "No completed matches yet"}
             </Text>
           </View>
@@ -457,8 +471,8 @@ export default function MatchesTab() {
               if (!list.length) return null;
 
               return (
-                <View key={tid} style={{ gap: 10 }}>
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>{tournamentName(tid)}</Text>
+                <View key={tid} style={{ gap: normalize(10) }}>
+                  <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16) }}>{tournamentName(tid)}</Text>
 
                   {list.map((m: any) => {
                     const home = teamById(m.homeTeamId);
@@ -469,12 +483,18 @@ export default function MatchesTab() {
                     const showScore = mode === "RESULTS" || isLive(m) || isFinal(m);
 
                     return (
-                      <TouchableOpacity key={m.id} onPress={() => router.push(`/live/${m.id}`)}>
+                      <TouchableOpacity 
+                        key={m.id} 
+                        onPress={() => router.push(`/matches/${m.id}`)}
+                        style={{
+                          ...(isWeb() && { cursor: "pointer" }),
+                        }}
+                      >
                         <View
                           style={{
                             backgroundColor: "#0A2238",
-                            borderRadius: 16,
-                            padding: 14,
+                            borderRadius: normalize(16),
+                            padding: spacing.md,
                             borderWidth: isLive(m) ? 2 : 1,
                             borderColor: isLive(m) ? "#FF3B30" : "rgba(255,255,255,0.08)",
                           }}
@@ -484,49 +504,49 @@ export default function MatchesTab() {
                             <View
                               style={{
                                 backgroundColor: isLive(m) ? "rgba(255,59,48,0.22)" : isFinal(m) ? "rgba(159,179,200,0.18)" : "rgba(242,209,0,0.15)",
-                                paddingVertical: 6,
-                                paddingHorizontal: 10,
+                                paddingVertical: spacing.sm,
+                                paddingHorizontal: normalize(10),
                                 borderRadius: 999,
                                 borderWidth: 1,
                                 borderColor: "rgba(255,255,255,0.10)",
                               }}
                             >
-                              <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 12 }}>{liveLabel}</Text>
+                              <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(12) }}>{liveLabel}</Text>
                             </View>
-                            <Text style={{ color: "#9FB3C8", fontSize: 12 }}>
+                            <Text style={{ color: "#9FB3C8", fontSize: normalize(12) }}>
                               {m.date || "TBD"} • {m.time || "TBD"}
                             </Text>
                           </View>
 
                           {/* Teams */}
-                          <View style={{ marginTop: 12, gap: 10 }}>
+                          <View style={{ marginTop: spacing.md, gap: normalize(10) }}>
                             <View style={{ flexDirection: "row", alignItems: "center" }}>
-                              <Image source={getLogoSource(home?.logoKey)} style={{ width: 34, height: 34, borderRadius: 12 }} />
-                              <Text style={{ color: "#EAF2FF", fontWeight: "900", marginLeft: 10, flex: 1 }}>
+                              <Image source={getLogoSource(home?.logoKey)} style={{ width: normalize(34), height: normalize(34), borderRadius: normalize(12) }} />
+                              <Text style={{ color: "#EAF2FF", fontWeight: "900", marginLeft: normalize(10), flex: 1, fontSize: normalize(14) }}>
                                 {home?.name ?? "Home Team"}
                               </Text>
-                              <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 18 }}>
+                              <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: normalize(18) }}>
                                 {showScore ? score.home : "-"}
                               </Text>
                             </View>
 
                             <View style={{ flexDirection: "row", alignItems: "center" }}>
-                              <Image source={getLogoSource(away?.logoKey)} style={{ width: 34, height: 34, borderRadius: 12 }} />
-                              <Text style={{ color: "#EAF2FF", fontWeight: "900", marginLeft: 10, flex: 1 }}>
+                              <Image source={getLogoSource(away?.logoKey)} style={{ width: normalize(34), height: normalize(34), borderRadius: normalize(12) }} />
+                              <Text style={{ color: "#EAF2FF", fontWeight: "900", marginLeft: normalize(10), flex: 1, fontSize: normalize(14) }}>
                                 {away?.name ?? "Away Team"}
                               </Text>
-                              <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 18 }}>
+                              <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: normalize(18) }}>
                                 {showScore ? score.away : "-"}
                               </Text>
                             </View>
                           </View>
 
                           {/* Match Info */}
-                          <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)" }}>
-                            <Text style={{ color: "#9FB3C8", fontSize: 12 }}>
+                          <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)" }}>
+                            <Text style={{ color: "#9FB3C8", fontSize: normalize(12) }}>
                               {m.field || "Field TBD"}
                             </Text>
-                            <Text style={{ color: "#22C6D2", marginTop: 6, fontWeight: "900" }}>
+                            <Text style={{ color: "#22C6D2", marginTop: spacing.sm, fontWeight: "900", fontSize: normalize(14) }}>
                               Tap to {isLive(m) ? "watch live" : isScheduled(m) ? "manage match" : "view details"} →
                             </Text>
                           </View>
@@ -541,33 +561,33 @@ export default function MatchesTab() {
 
         {/* Standings */}
         {mode === "STANDINGS" ? (
-          <View style={{ backgroundColor: "#0A2238", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
-            <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>Standings</Text>
-            <Text style={{ color: "#9FB3C8", marginTop: 6, fontSize: 12 }}>
+          <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.md, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
+            <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16) }}>Standings</Text>
+            <Text style={{ color: "#9FB3C8", marginTop: spacing.sm, fontSize: normalize(12) }}>
               Auto-calculated from completed matches • Sorted by PTS → GD → GF
             </Text>
 
             {!standingsRows.length ? (
-              <View style={{ marginTop: 20, alignItems: "center" }}>
-                <Text style={{ color: "#9FB3C8", textAlign: "center" }}>
+              <View style={{ marginTop: spacing.xl, alignItems: "center" }}>
+                <Text style={{ color: "#9FB3C8", textAlign: "center", fontSize: normalize(14) }}>
                   No standings yet.
                 </Text>
-                <Text style={{ color: "#9FB3C8", marginTop: 8, textAlign: "center" }}>
+                <Text style={{ color: "#9FB3C8", marginTop: spacing.sm, textAlign: "center", fontSize: normalize(12) }}>
                   Complete a match (set to FINAL) and standings will populate automatically.
                 </Text>
               </View>
             ) : (
-              <View style={{ marginTop: 14 }}>
+              <View style={{ marginTop: spacing.md }}>
                 {/* Table Header */}
-                <View style={{ flexDirection: "row", paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.08)" }}>
-                  <Text style={{ color: "#9FB3C8", width: 32, fontWeight: "900", fontSize: 12 }}>#</Text>
-                  <Text style={{ color: "#9FB3C8", flex: 1, fontWeight: "900", fontSize: 12 }}>Team</Text>
-                  <Text style={{ color: "#9FB3C8", width: 32, textAlign: "center", fontWeight: "900", fontSize: 12 }}>P</Text>
-                  <Text style={{ color: "#9FB3C8", width: 32, textAlign: "center", fontWeight: "900", fontSize: 12 }}>W</Text>
-                  <Text style={{ color: "#9FB3C8", width: 32, textAlign: "center", fontWeight: "900", fontSize: 12 }}>D</Text>
-                  <Text style={{ color: "#9FB3C8", width: 32, textAlign: "center", fontWeight: "900", fontSize: 12 }}>L</Text>
-                  <Text style={{ color: "#9FB3C8", width: 40, textAlign: "center", fontWeight: "900", fontSize: 12 }}>GD</Text>
-                  <Text style={{ color: "#9FB3C8", width: 44, textAlign: "center", fontWeight: "900", fontSize: 12 }}>PTS</Text>
+                <View style={{ flexDirection: "row", paddingBottom: normalize(10), borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.08)" }}>
+                  <Text style={{ color: "#9FB3C8", width: normalize(32), fontWeight: "900", fontSize: normalize(12) }}>#</Text>
+                  <Text style={{ color: "#9FB3C8", flex: 1, fontWeight: "900", fontSize: normalize(12) }}>Team</Text>
+                  <Text style={{ color: "#9FB3C8", width: normalize(32), textAlign: "center", fontWeight: "900", fontSize: normalize(12) }}>P</Text>
+                  <Text style={{ color: "#9FB3C8", width: normalize(32), textAlign: "center", fontWeight: "900", fontSize: normalize(12) }}>W</Text>
+                  <Text style={{ color: "#9FB3C8", width: normalize(32), textAlign: "center", fontWeight: "900", fontSize: normalize(12) }}>D</Text>
+                  <Text style={{ color: "#9FB3C8", width: normalize(32), textAlign: "center", fontWeight: "900", fontSize: normalize(12) }}>L</Text>
+                  <Text style={{ color: "#9FB3C8", width: normalize(40), textAlign: "center", fontWeight: "900", fontSize: normalize(12) }}>GD</Text>
+                  <Text style={{ color: "#9FB3C8", width: normalize(44), textAlign: "center", fontWeight: "900", fontSize: normalize(12) }}>PTS</Text>
                 </View>
 
                 {/* Table Rows */}
@@ -581,45 +601,46 @@ export default function MatchesTab() {
                       onPress={() => router.push(`/teams/${r.teamId}`)}
                       style={{
                         flexDirection: "row",
-                        paddingVertical: 12,
+                        paddingVertical: spacing.md,
                         borderBottomWidth: 1,
                         borderBottomColor: "rgba(255,255,255,0.06)",
                         alignItems: "center",
                         backgroundColor: isTop3 ? `${medalColor}10` : "transparent",
-                        marginHorizontal: -14,
-                        paddingHorizontal: 14,
+                        marginHorizontal: -spacing.md,
+                        paddingHorizontal: spacing.md,
+                        ...(isWeb() && { cursor: "pointer" }),
                       }}
                     >
                       {/* Rank */}
                       <View style={{
-                        width: 32,
+                        width: normalize(32),
                         flexDirection: "row",
                         alignItems: "center",
-                        gap: 4,
+                        gap: spacing.xs,
                       }}>
-                        <Text style={{ color: isTop3 ? medalColor : "#EAF2FF", fontWeight: "900", fontSize: 14 }}>
+                        <Text style={{ color: isTop3 ? medalColor : "#EAF2FF", fontWeight: "900", fontSize: normalize(14) }}>
                           {idx + 1}
                         </Text>
-                        {isTop3 && <Text style={{ fontSize: 10 }}>{idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"}</Text>}
+                        {isTop3 && <Text style={{ fontSize: normalize(10) }}>{idx === 0 ? "🥇" : idx === 1 ? "🥈" : "🥉"}</Text>}
                       </View>
 
                       {/* Team */}
                       <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
-                        <Image source={getLogoSource(r.logoKey)} style={{ width: 26, height: 26, borderRadius: 10, marginRight: 10 }} />
-                        <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 13 }} numberOfLines={1}>
+                        <Image source={getLogoSource(r.logoKey)} style={{ width: normalize(26), height: normalize(26), borderRadius: normalize(10), marginRight: normalize(10) }} />
+                        <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(13) }} numberOfLines={1}>
                           {r.name}
                         </Text>
                       </View>
 
                       {/* Stats */}
-                      <Text style={{ color: "#EAF2FF", width: 32, textAlign: "center", fontWeight: "900", fontSize: 13 }}>{r.P}</Text>
-                      <Text style={{ color: "#34C759", width: 32, textAlign: "center", fontWeight: "900", fontSize: 13 }}>{r.W}</Text>
-                      <Text style={{ color: "#F2D100", width: 32, textAlign: "center", fontWeight: "900", fontSize: 13 }}>{r.D}</Text>
-                      <Text style={{ color: "#FF3B30", width: 32, textAlign: "center", fontWeight: "900", fontSize: 13 }}>{r.L}</Text>
-                      <Text style={{ color: "#22C6D2", width: 40, textAlign: "center", fontWeight: "900", fontSize: 13 }}>
+                      <Text style={{ color: "#EAF2FF", width: normalize(32), textAlign: "center", fontWeight: "900", fontSize: normalize(13) }}>{r.P}</Text>
+                      <Text style={{ color: "#34C759", width: normalize(32), textAlign: "center", fontWeight: "900", fontSize: normalize(13) }}>{r.W}</Text>
+                      <Text style={{ color: "#F2D100", width: normalize(32), textAlign: "center", fontWeight: "900", fontSize: normalize(13) }}>{r.D}</Text>
+                      <Text style={{ color: "#FF3B30", width: normalize(32), textAlign: "center", fontWeight: "900", fontSize: normalize(13) }}>{r.L}</Text>
+                      <Text style={{ color: "#22C6D2", width: normalize(40), textAlign: "center", fontWeight: "900", fontSize: normalize(13) }}>
                         {r.GD >= 0 ? "+" : ""}{r.GD}
                       </Text>
-                      <Text style={{ color: "#F2D100", width: 44, textAlign: "center", fontWeight: "900", fontSize: 15 }}>{r.PTS}</Text>
+                      <Text style={{ color: "#F2D100", width: normalize(44), textAlign: "center", fontWeight: "900", fontSize: normalize(15) }}>{r.PTS}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -637,36 +658,36 @@ export default function MatchesTab() {
         onRequestClose={() => setShowCreateModal(false)}
       >
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "flex-end" }}>
-          <View style={{ backgroundColor: "#0A2238", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, maxHeight: "90%" }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <Text style={{ color: "#F2D100", fontSize: 20, fontWeight: "900" }}>Create Match</Text>
+          <View style={{ backgroundColor: "#0A2238", borderTopLeftRadius: normalize(24), borderTopRightRadius: normalize(24), padding: spacing.xl, maxHeight: "90%" }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xl }}>
+              <Text style={{ color: "#F2D100", fontSize: normalize(20), fontWeight: "900" }}>Create Match</Text>
               <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <Text style={{ color: "#9FB3C8", fontSize: 28 }}>×</Text>
+                <Text style={{ color: "#9FB3C8", fontSize: normalize(28) }}>×</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ gap: 16, paddingBottom: 20 }}>
+            <ScrollView contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xl }}>
               {/* Home Team */}
               <View>
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Home Team</Text>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: spacing.sm, fontSize: normalize(14) }}>Home Team</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
+                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
                     {availableTeams.map((team: any) => (
                       <TouchableOpacity
                         key={team.id}
                         onPress={() => setSelectedHomeTeam(team.id)}
                         style={{
                           backgroundColor: selectedHomeTeam === team.id ? "#34C759" : "rgba(255,255,255,0.06)",
-                          padding: 12,
-                          borderRadius: 12,
+                          padding: spacing.md,
+                          borderRadius: normalize(12),
                           borderWidth: 1,
                           borderColor: selectedHomeTeam === team.id ? "#34C759" : "rgba(255,255,255,0.08)",
-                          minWidth: 120,
+                          minWidth: normalize(120),
                           alignItems: "center",
                         }}
                       >
-                        <Image source={getLogoSource(team.logoKey)} style={{ width: 40, height: 40, borderRadius: 12, marginBottom: 8 }} />
-                        <Text style={{ color: selectedHomeTeam === team.id ? "#061A2B" : "#EAF2FF", fontWeight: "900", fontSize: 12, textAlign: "center" }}>
+                        <Image source={getLogoSource(team.logoKey)} style={{ width: normalize(40), height: normalize(40), borderRadius: normalize(12), marginBottom: spacing.sm }} />
+                        <Text style={{ color: selectedHomeTeam === team.id ? "#061A2B" : "#EAF2FF", fontWeight: "900", fontSize: normalize(12), textAlign: "center" }}>
                           {team.name}
                         </Text>
                       </TouchableOpacity>
@@ -677,9 +698,9 @@ export default function MatchesTab() {
 
               {/* Away Team */}
               <View>
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Away Team</Text>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: spacing.sm, fontSize: normalize(14) }}>Away Team</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{ flexDirection: "row", gap: 8 }}>
+                  <View style={{ flexDirection: "row", gap: spacing.sm }}>
                     {availableTeams.map((team: any) => (
                       <TouchableOpacity
                         key={team.id}
@@ -687,17 +708,17 @@ export default function MatchesTab() {
                         disabled={team.id === selectedHomeTeam}
                         style={{
                           backgroundColor: selectedAwayTeam === team.id ? "#22C6D2" : "rgba(255,255,255,0.06)",
-                          padding: 12,
-                          borderRadius: 12,
+                          padding: spacing.md,
+                          borderRadius: normalize(12),
                           borderWidth: 1,
                           borderColor: selectedAwayTeam === team.id ? "#22C6D2" : "rgba(255,255,255,0.08)",
-                          minWidth: 120,
+                          minWidth: normalize(120),
                           alignItems: "center",
                           opacity: team.id === selectedHomeTeam ? 0.3 : 1,
                         }}
                       >
-                        <Image source={getLogoSource(team.logoKey)} style={{ width: 40, height: 40, borderRadius: 12, marginBottom: 8 }} />
-                        <Text style={{ color: selectedAwayTeam === team.id ? "#061A2B" : "#EAF2FF", fontWeight: "900", fontSize: 12, textAlign: "center" }}>
+                        <Image source={getLogoSource(team.logoKey)} style={{ width: normalize(40), height: normalize(40), borderRadius: normalize(12), marginBottom: spacing.sm }} />
+                        <Text style={{ color: selectedAwayTeam === team.id ? "#061A2B" : "#EAF2FF", fontWeight: "900", fontSize: normalize(12), textAlign: "center" }}>
                           {team.name}
                         </Text>
                       </TouchableOpacity>
@@ -708,35 +729,35 @@ export default function MatchesTab() {
 
               {/* Match Details */}
               <View>
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Date</Text>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: spacing.sm, fontSize: normalize(14) }}>Date</Text>
                 <TextInput
                   value={matchDate}
                   onChangeText={setMatchDate}
                   placeholder="e.g., Nov 25, 2024"
                   placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#EAF2FF", padding: 12, borderRadius: 12, fontWeight: "900" }}
+                  style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#EAF2FF", padding: spacing.md, borderRadius: normalize(12), fontWeight: "900", fontSize: normalize(14) }}
                 />
               </View>
 
               <View>
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Time</Text>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: spacing.sm, fontSize: normalize(14) }}>Time</Text>
                 <TextInput
                   value={matchTime}
                   onChangeText={setMatchTime}
                   placeholder="e.g., 3:00 PM"
                   placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#EAF2FF", padding: 12, borderRadius: 12, fontWeight: "900" }}
+                  style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#EAF2FF", padding: spacing.md, borderRadius: normalize(12), fontWeight: "900", fontSize: normalize(14) }}
                 />
               </View>
 
               <View>
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Field</Text>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: spacing.sm, fontSize: normalize(14) }}>Field</Text>
                 <TextInput
                   value={matchField}
                   onChangeText={setMatchField}
                   placeholder="e.g., Field 3"
                   placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#EAF2FF", padding: 12, borderRadius: 12, fontWeight: "900" }}
+                  style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "#EAF2FF", padding: spacing.md, borderRadius: normalize(12), fontWeight: "900", fontSize: normalize(14) }}
                 />
               </View>
             </ScrollView>
@@ -747,13 +768,14 @@ export default function MatchesTab() {
               disabled={!selectedHomeTeam || !selectedAwayTeam}
               style={{
                 backgroundColor: selectedHomeTeam && selectedAwayTeam ? "#F2D100" : "rgba(255,255,255,0.1)",
-                padding: 16,
-                borderRadius: 14,
+                padding: spacing.lg,
+                borderRadius: normalize(14),
                 alignItems: "center",
-                marginTop: 10,
+                marginTop: normalize(10),
+                ...(isWeb() && selectedHomeTeam && selectedAwayTeam && { cursor: "pointer" }),
               }}
             >
-              <Text style={{ color: selectedHomeTeam && selectedAwayTeam ? "#061A2B" : "#9FB3C8", fontWeight: "900", fontSize: 16 }}>
+              <Text style={{ color: selectedHomeTeam && selectedAwayTeam ? "#061A2B" : "#9FB3C8", fontWeight: "900", fontSize: normalize(16) }}>
                 Create Match
               </Text>
             </TouchableOpacity>

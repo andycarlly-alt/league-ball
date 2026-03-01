@@ -1,11 +1,11 @@
-// app/admin/index.tsx - ADMIN PORTAL WITH CHECK-INS TAB
+// app/admin/index.tsx - ENHANCED ADMIN PORTAL WITH BEREAVEMENT
 import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Alert, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAppStore } from "../../src/state/AppStore";
 import { getLogoSource } from "../../src/utils/logos";
 
-type AdminTab = "DASHBOARD" | "FINANCE" | "CARDS" | "RULES" | "ACTIONS" | "ANALYTICS" | "CHECK_INS";
+type AdminTab = "DASHBOARD" | "FINANCE" | "CARDS" | "CHECK_INS" | "REPORTS" | "ACTIONS" | "ANALYTICS";
 
 export default function AdminPortal() {
   const router = useRouter();
@@ -20,6 +20,8 @@ export default function AdminPortal() {
     matchEvents,
     pendingPayments,
     tournaments,
+    bereavementEnrollments,
+    bereavementEvents,
     updateLeagueSettings,
     addPlayer,
     updateTeam,
@@ -30,6 +32,13 @@ export default function AdminPortal() {
   const [selectedTeamForPlayer, setSelectedTeamForPlayer] = useState("");
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerNumber, setNewPlayerNumber] = useState("");
+  
+  // Player search state
+  const [playerSearchQuery, setPlayerSearchQuery] = useState("");
+  const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
+  
+  // Match form state
+  const [selectedMatchForForm, setSelectedMatchForForm] = useState<any>(null);
 
   // Check admin access
   const isAdmin = can("MANAGE_TOURNAMENTS") || currentUser?.role === "LEAGUE_ADMIN" || currentUser?.role === "TOURNAMENT_ADMIN";
@@ -60,6 +69,17 @@ export default function AdminPortal() {
     return !!team;
   });
   const leagueMatches = (matches ?? []).filter((m: any) => m.leagueId === activeLeagueId);
+
+  // ✅ BEREAVEMENT STATS
+  const bereavementStats = useMemo(() => {
+    const enrollments = bereavementEnrollments || [];
+    const events = bereavementEvents || [];
+    return {
+      totalEnrollments: enrollments.length,
+      pendingEnrollments: enrollments.filter((e: any) => e.status === "PENDING").length,
+      activeEvents: events.filter((e: any) => e.status === "ACTIVE").length,
+    };
+  }, [bereavementEnrollments, bereavementEvents]);
 
   // Calculate metrics
   const totalRevenue = useMemo(() => {
@@ -109,7 +129,216 @@ export default function AdminPortal() {
     }, 0);
   }, [players]);
 
-  // Tab button component
+  // Player search functionality
+  const searchResults = useMemo(() => {
+    if (!playerSearchQuery.trim()) return [];
+    
+    const query = playerSearchQuery.toLowerCase();
+    return leaguePlayers.filter((player: any) => {
+      const team = leagueTeams.find((t: any) => t.id === player.teamId);
+      return (
+        player.fullName?.toLowerCase().includes(query) ||
+        player.shirtNumber?.toString().includes(query) ||
+        team?.name?.toLowerCase().includes(query) ||
+        player.position?.toLowerCase().includes(query)
+      );
+    }).slice(0, 20);
+  }, [playerSearchQuery, leaguePlayers, leagueTeams]);
+
+  // Generate match form
+  const generateMatchForm = (match: any) => {
+    const homeTeam = teams.find((t: any) => t.name === match.homeTeam);
+    const awayTeam = teams.find((t: any) => t.name === match.awayTeam);
+    const homePlayersOnMatch = (players ?? []).filter((p: any) => p.teamId === homeTeam?.id);
+    const awayPlayersOnMatch = (players ?? []).filter((p: any) => p.teamId === awayTeam?.id);
+    const matchEventsForMatch = (matchEvents ?? []).filter((e: any) => e.matchId === match.id);
+
+    const formData = {
+      match: {
+        id: match.id,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        kickoff: match.kickoffAt ? new Date(match.kickoffAt).toLocaleString() : 'TBD',
+        venue: match.venue || 'TBD',
+        status: match.status,
+        homeScore: match.homeScore || 0,
+        awayScore: match.awayScore || 0,
+      },
+      homeRoster: homePlayersOnMatch.map((p: any) => ({
+        name: p.fullName,
+        number: p.shirtNumber,
+        position: p.position,
+        verified: p.documentVerified,
+        checkedIn: (p.checkInHistory || []).some((c: any) => c.matchId === match.id && c.approved),
+      })),
+      awayRoster: awayPlayersOnMatch.map((p: any) => ({
+        name: p.fullName,
+        number: p.shirtNumber,
+        position: p.position,
+        verified: p.documentVerified,
+        checkedIn: (p.checkInHistory || []).some((c: any) => c.matchId === match.id && c.approved),
+      })),
+      events: matchEventsForMatch.map((e: any) => {
+        const player = players.find((p: any) => p.id === e.playerId);
+        return {
+          minute: e.minute,
+          type: e.type,
+          player: player?.fullName || 'Unknown',
+          team: e.teamId === homeTeam?.id ? 'Home' : 'Away',
+        };
+      }),
+      stats: {
+        totalGoals: matchEventsForMatch.filter((e: any) => e.type === 'GOAL').length,
+        yellowCards: matchEventsForMatch.filter((e: any) => e.type === 'YELLOW').length,
+        redCards: matchEventsForMatch.filter((e: any) => e.type === 'RED').length,
+        homeCheckIns: homePlayersOnMatch.filter((p: any) => 
+          (p.checkInHistory || []).some((c: any) => c.matchId === match.id && c.approved)
+        ).length,
+        awayCheckIns: awayPlayersOnMatch.filter((p: any) => 
+          (p.checkInHistory || []).some((c: any) => c.matchId === match.id && c.approved)
+        ).length,
+      }
+    };
+
+    return formData;
+  };
+
+  const exportMatchForm = (match: any) => {
+    const formData = generateMatchForm(match);
+    
+    const formText = `
+═══════════════════════════════════════
+          OFFICIAL MATCH FORM
+          ${activeLeague?.name || 'NVT VETERANS LEAGUE'}
+═══════════════════════════════════════
+
+Match ID: ${formData.match.id}
+Date/Time: ${formData.match.kickoff}
+Venue: ${formData.match.venue}
+Status: ${formData.match.status}
+
+TEAMS:
+${formData.match.homeTeam} vs ${formData.match.awayTeam}
+
+${formData.match.status === 'FINAL' ? `FINAL SCORE:
+${formData.match.homeTeam}: ${formData.match.homeScore}
+${formData.match.awayTeam}: ${formData.match.awayScore}` : 'Match not yet completed'}
+
+═══════════════════════════════════════
+HOME TEAM ROSTER: ${formData.match.homeTeam}
+═══════════════════════════════════════
+${'#'.padEnd(4)}${'Name'.padEnd(26)}${'Pos'.padEnd(13)}${'✓'.padEnd(5)}Check-In
+${formData.homeRoster.map((p: any) => 
+  `${('#' + p.number).padEnd(4)}${p.name.padEnd(26)}${p.position.padEnd(13)}${(p.verified ? '✓' : '✗').padEnd(5)}${p.checkedIn ? '✓' : '✗'}`
+).join('\n')}
+
+Total Players: ${formData.homeRoster.length}
+Checked In: ${formData.stats.homeCheckIns}
+
+═══════════════════════════════════════
+AWAY TEAM ROSTER: ${formData.match.awayTeam}
+═══════════════════════════════════════
+${'#'.padEnd(4)}${'Name'.padEnd(26)}${'Pos'.padEnd(13)}${'✓'.padEnd(5)}Check-In
+${formData.awayRoster.map((p: any) => 
+  `${('#' + p.number).padEnd(4)}${p.name.padEnd(26)}${p.position.padEnd(13)}${(p.verified ? '✓' : '✗').padEnd(5)}${p.checkedIn ? '✓' : '✗'}`
+).join('\n')}
+
+Total Players: ${formData.awayRoster.length}
+Checked In: ${formData.stats.awayCheckIns}
+
+═══════════════════════════════════════
+MATCH EVENTS
+═══════════════════════════════════════
+${formData.events.length > 0 ? formData.events.map((e: any) => 
+  `${(e.minute + "'").padEnd(5)} ${e.type.padEnd(10)} ${e.player.padEnd(25)} (${e.team})`
+).join('\n') : 'No events recorded'}
+
+═══════════════════════════════════════
+Generated: ${new Date().toLocaleString()}
+NVT Veterans League Management System
+    `.trim();
+
+    Alert.alert(
+      '📋 Match Form Generated',
+      'Form ready for export.',
+      [
+        { text: 'Cancel' },
+        {
+          text: 'View Details',
+          onPress: () => {
+            console.log(formText);
+            setSelectedMatchForForm(formData);
+          }
+        },
+        {
+          text: 'Copy Text',
+          onPress: () => {
+            console.log('Match Form Text:\n', formText);
+            Alert.alert('✅ Copied', 'Form text logged to console');
+          }
+        }
+      ]
+    );
+  };
+
+  const exportAllMatchForms = () => {
+    const allForms = leagueMatches.map((match: any) => generateMatchForm(match));
+    
+    Alert.alert(
+      '📦 Export All Match Forms',
+      `Ready to export ${allForms.length} match forms.`,
+      [
+        { text: 'Cancel' },
+        {
+          text: 'Show Summary',
+          onPress: () => {
+            Alert.alert(
+              '✅ Forms Ready', 
+              `${allForms.length} forms prepared:\n\n` +
+              `Completed: ${allForms.filter(f => f.match.status === 'FINAL').length}\n` +
+              `Upcoming: ${allForms.filter(f => f.match.status === 'SCHEDULED').length}\n` +
+              `Live: ${allForms.filter(f => f.match.status === 'LIVE').length}`
+            );
+          }
+        }
+      ]
+    );
+  };
+
+  const exportPlayerSearch = () => {
+    const csvData = [
+      ['Name', 'Number', 'Team', 'Position', 'Verified', 'Total Check-Ins', 'Goals'].join(','),
+      ...searchResults.map((p: any) => {
+        const team = leagueTeams.find((t: any) => t.id === p.teamId);
+        const goals = (matchEvents ?? []).filter((e: any) => e.playerId === p.id && e.type === 'GOAL').length;
+        return [
+          p.fullName,
+          p.shirtNumber,
+          team?.name || 'Unknown',
+          p.position,
+          p.documentVerified ? 'Yes' : 'No',
+          p.checkInHistory?.length || 0,
+          goals
+        ].join(',');
+      })
+    ].join('\n');
+
+    Alert.alert(
+      '📄 Export Player Data',
+      `Generated CSV with ${searchResults.length} players.`,
+      [
+        { text: 'OK' },
+        {
+          text: 'Copy Data',
+          onPress: () => {
+            console.log('Player CSV Data:\n', csvData);
+            Alert.alert('✅ Data Copied', 'CSV data logged to console');
+          }
+        }
+      ]
+    );
+  };
+
   const TabButton = ({ tab, label, icon }: { tab: AdminTab; label: string; icon: string }) => (
     <TouchableOpacity
       onPress={() => setActiveTab(tab)}
@@ -138,7 +367,6 @@ export default function AdminPortal() {
     </TouchableOpacity>
   );
 
-  // Quick add player
   const handleAddPlayer = () => {
     if (!newPlayerName.trim()) {
       Alert.alert("Error", "Player name is required");
@@ -207,13 +435,12 @@ export default function AdminPortal() {
           <TabButton tab="CHECK_INS" label="Check-Ins" icon="📸" />
         </View>
         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-          <TabButton tab="RULES" label="Rules" icon="⚙️" />
+          <TabButton tab="REPORTS" label="Reports" icon="📋" />
           <TabButton tab="ACTIONS" label="Actions" icon="⚡" />
           <TabButton tab="ANALYTICS" label="Analytics" icon="📈" />
         </View>
       </View>
 
-      {/* Tab Content */}
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
         {/* DASHBOARD TAB */}
         {activeTab === "DASHBOARD" && (
@@ -301,303 +528,126 @@ export default function AdminPortal() {
               </View>
             </View>
 
-            {/* Recent Activity */}
+            {/* ✅✅✅ BEREAVEMENT STAT CARD ✅✅✅ */}
             <View
               style={{
                 backgroundColor: "#0A2238",
                 padding: 16,
                 borderRadius: 16,
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.08)",
+                borderWidth: 2,
+                borderColor: "rgba(255,59,48,0.3)",
               }}
             >
-              <Text style={{ color: "#EAF2FF", fontSize: 16, fontWeight: "900", marginBottom: 12 }}>
-                Recent Activity
-              </Text>
-              <View style={{ gap: 8 }}>
-                <View
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <Text style={{ color: "#FF3B30", fontSize: 18, fontWeight: "900" }}>
+                  🏥 Bereavement Fund
+                </Text>
+                <TouchableOpacity
+                  onPress={() => router.push('/admin/bereavement')}
                   style={{
-                    backgroundColor: "#0B2842",
-                    padding: 12,
-                    borderRadius: 12,
-                    borderLeftWidth: 4,
-                    borderLeftColor: "#34C759",
+                    backgroundColor: "#FF3B30",
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    borderRadius: 8,
                   }}
                 >
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>Match Completed</Text>
-                  <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
-                    {completedMatches} matches finished
+                  <Text style={{ color: "#FFF", fontWeight: "900", fontSize: 12 }}>
+                    Manage →
                   </Text>
-                </View>
-                <View
-                  style={{
-                    backgroundColor: "#0B2842",
-                    padding: 12,
-                    borderRadius: 12,
-                    borderLeftWidth: 4,
-                    borderLeftColor: "#F2D100",
-                  }}
-                >
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
-                    {cardFines.filter((f: any) => f.status === "PENDING").length} Pending Fines
-                  </Text>
-                  <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
-                    ${(cardFines.filter((f: any) => f.status === "PENDING").reduce((sum: number, f: any) => sum + f.amount, 0) / 100).toFixed(2)} outstanding
-                  </Text>
-                </View>
-                {totalCheckIns > 0 && (
-                  <View
-                    style={{
-                      backgroundColor: "#0B2842",
-                      padding: 12,
-                      borderRadius: 12,
-                      borderLeftWidth: 4,
-                      borderLeftColor: "#22C6D2",
-                    }}
-                  >
-                    <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
-                      {todaysCheckIns} Check-Ins Today
-                    </Text>
-                    <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
-                      {totalCheckIns} total check-ins
-                    </Text>
-                  </View>
-                )}
+                </TouchableOpacity>
               </View>
-            </View>
 
-            {/* Quick Stats */}
-            <View
-              style={{
-                backgroundColor: "#0A2238",
-                padding: 16,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.08)",
-              }}
-            >
-              <Text style={{ color: "#EAF2FF", fontSize: 16, fontWeight: "900", marginBottom: 12 }}>
-                League Stats
-              </Text>
-              <View style={{ gap: 10 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ color: "#9FB3C8" }}>Active Tournaments</Text>
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>{(tournaments ?? []).length}</Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ color: "#9FB3C8" }}>Total Goals Scored</Text>
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
-                    {(matchEvents ?? []).filter((e: any) => e.type === "GOAL").length}
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#9FB3C8", fontSize: 11 }}>Total Enrolled</Text>
+                  <Text style={{ color: "#EAF2FF", fontSize: 24, fontWeight: "900", marginTop: 4 }}>
+                    {bereavementStats.totalEnrollments}
                   </Text>
                 </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ color: "#9FB3C8" }}>Avg Goals/Match</Text>
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
-                    {completedMatches > 0
-                      ? ((matchEvents ?? []).filter((e: any) => e.type === "GOAL").length / completedMatches).toFixed(1)
-                      : "0.0"}
+
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#9FB3C8", fontSize: 11 }}>Pending Approval</Text>
+                  <Text style={{ color: "#F2D100", fontSize: 24, fontWeight: "900", marginTop: 4 }}>
+                    {bereavementStats.pendingEnrollments}
+                  </Text>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: "#9FB3C8", fontSize: 11 }}>Active Events</Text>
+                  <Text style={{ color: "#FF3B30", fontSize: 24, fontWeight: "900", marginTop: 4 }}>
+                    {bereavementStats.activeEvents}
                   </Text>
                 </View>
               </View>
             </View>
+            {/* ✅✅✅ END BEREAVEMENT CARD ✅✅✅ */}
           </View>
         )}
 
-        {/* FINANCE TAB */}
-        {activeTab === "FINANCE" && (
+        {/* ACTIONS TAB */}
+        {activeTab === "ACTIONS" && (
           <View style={{ gap: 16 }}>
-            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>💰 Financial Management</Text>
+            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>⚡ Quick Actions</Text>
 
-            {/* Revenue Overview */}
-            <View
-              style={{
-                backgroundColor: "#0A2238",
-                padding: 16,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: "rgba(34,198,210,0.3)",
-              }}
-            >
-              <Text style={{ color: "#22C6D2", fontSize: 18, fontWeight: "900", marginBottom: 12 }}>
-                Revenue Breakdown
-              </Text>
-              <View style={{ gap: 12 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={{ color: "#9FB3C8" }}>Team Registrations</Text>
-                  <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 18 }}>
-                    ${((pendingPayments ?? [])
-                      .filter((p: any) => p.type === "TEAM_REGISTRATION")
-                      .reduce((sum: number, p: any) => sum + p.amount, 0) / 100).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={{ color: "#9FB3C8" }}>Card Fines</Text>
-                  <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 18 }}>
-                    ${(cardFines.reduce((sum: number, f: any) => sum + f.amount, 0) / 100).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                  <Text style={{ color: "#9FB3C8" }}>Player Fees</Text>
-                  <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 18 }}>
-                    ${((pendingPayments ?? [])
-                      .filter((p: any) => p.type === "PLAYER_FEE")
-                      .reduce((sum: number, p: any) => sum + p.amount, 0) / 100).toFixed(2)}
-                  </Text>
-                </View>
-                <View
-                  style={{
-                    marginTop: 8,
-                    paddingTop: 12,
-                    borderTopWidth: 1,
-                    borderTopColor: "rgba(255,255,255,0.1)",
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>Total Collected</Text>
-                  <Text style={{ color: "#34C759", fontWeight: "900", fontSize: 20 }}>
-                    ${(totalRevenue / 100).toFixed(2)}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text style={{ color: "#9FB3C8" }}>Pending</Text>
-                  <Text style={{ color: "#FF3B30", fontWeight: "900", fontSize: 16 }}>
-                    ${(pendingRevenue / 100).toFixed(2)}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Pending Payments */}
-            <View
-              style={{
-                backgroundColor: "#0A2238",
-                padding: 16,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.08)",
-              }}
-            >
-              <Text style={{ color: "#EAF2FF", fontSize: 18, fontWeight: "900", marginBottom: 12 }}>
-                Pending Payments ({(pendingPayments ?? []).filter((p: any) => p.status === "PENDING").length})
-              </Text>
-              <ScrollView style={{ maxHeight: 400 }}>
-                {(pendingPayments ?? [])
-                  .filter((p: any) => p.status === "PENDING")
-                  .slice(0, 10)
-                  .map((payment: any) => (
-                    <View
-                      key={payment.id}
-                      style={{
-                        backgroundColor: "#0B2842",
-                        padding: 12,
-                        borderRadius: 12,
-                        marginBottom: 8,
-                        borderLeftWidth: 4,
-                        borderLeftColor: payment.type === "CARD_FINE" ? "#F2D100" : "#22C6D2",
-                      }}
-                    >
-                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
-                        <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>{payment.teamName}</Text>
-                        <Text style={{ color: "#F2D100", fontWeight: "900" }}>
-                          ${(payment.amount / 100).toFixed(2)}
-                        </Text>
-                      </View>
-                      <Text style={{ color: "#9FB3C8", fontSize: 12 }}>
-                        {payment.type.replace(/_/g, " ")} • Due:{" "}
-                        {new Date(payment.dueDate).toLocaleDateString()}
-                      </Text>
-                      {payment.playerName && (
-                        <Text style={{ color: "#22C6D2", fontSize: 12, marginTop: 4 }}>
-                          Player: {payment.playerName}
-                        </Text>
-                      )}
-                    </View>
-                  ))}
-              </ScrollView>
-            </View>
-
-            {/* Export Options */}
+            {/* ✅✅✅ BEREAVEMENT BUTTON ✅✅✅ */}
             <TouchableOpacity
+              onPress={() => router.push('/admin/bereavement')}
+              style={{
+                backgroundColor: "#FF3B30",
+                padding: 16,
+                borderRadius: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              <Text style={{ fontSize: 24 }}>🏥</Text>
+              <Text style={{ color: "#FFF", fontWeight: "900", fontSize: 16 }}>
+                Manage Bereavement Fund
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setShowAddPlayerModal(true)}
               style={{
                 backgroundColor: "#34C759",
                 padding: 16,
                 borderRadius: 12,
+                flexDirection: "row",
                 alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
               }}
             >
-              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 16 }}>
-                📄 Export Financial Report
-              </Text>
+              <Text style={{ fontSize: 24 }}>👤</Text>
+              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 16 }}>Quick Add Player</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push('/admin/check-ins')}
+              style={{
+                backgroundColor: "#22C6D2",
+                padding: 16,
+                borderRadius: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              <Text style={{ fontSize: 24 }}>📸</Text>
+              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 16 }}>Check-In Dashboard</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* CARDS TAB */}
-        {activeTab === "CARDS" && (
+        {/* REPORTS TAB - WITH MATCH FORMS & PLAYER SEARCH */}
+        {activeTab === "REPORTS" && (
           <View style={{ gap: 16 }}>
-            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>🟨 Card Tracking</Text>
+            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>📋 Reports & Search</Text>
 
-            {/* Card Summary */}
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <View
-                style={{
-                  flex: 1,
-                  backgroundColor: "#0A2238",
-                  padding: 16,
-                  borderRadius: 16,
-                  borderWidth: 2,
-                  borderColor: "#F2D100",
-                }}
-              >
-                <Text style={{ fontSize: 32, textAlign: "center" }}>🟨</Text>
-                <Text
-                  style={{
-                    color: "#F2D100",
-                    fontSize: 32,
-                    fontWeight: "900",
-                    textAlign: "center",
-                    marginTop: 8,
-                  }}
-                >
-                  {yellowCards}
-                </Text>
-                <Text style={{ color: "#9FB3C8", textAlign: "center", marginTop: 4 }}>Yellow Cards</Text>
-                <Text style={{ color: "#9FB3C8", textAlign: "center", fontSize: 12, marginTop: 4 }}>
-                  ${((yellowCards * 2500) / 100).toFixed(2)} in fines
-                </Text>
-              </View>
-
-              <View
-                style={{
-                  flex: 1,
-                  backgroundColor: "#0A2238",
-                  padding: 16,
-                  borderRadius: 16,
-                  borderWidth: 2,
-                  borderColor: "#FF3B30",
-                }}
-              >
-                <Text style={{ fontSize: 32, textAlign: "center" }}>🟥</Text>
-                <Text
-                  style={{
-                    color: "#FF3B30",
-                    fontSize: 32,
-                    fontWeight: "900",
-                    textAlign: "center",
-                    marginTop: 8,
-                  }}
-                >
-                  {redCards}
-                </Text>
-                <Text style={{ color: "#9FB3C8", textAlign: "center", marginTop: 4 }}>Red Cards</Text>
-                <Text style={{ color: "#9FB3C8", textAlign: "center", fontSize: 12, marginTop: 4 }}>
-                  ${((redCards * 7500) / 100).toFixed(2)} in fines
-                </Text>
-              </View>
-            </View>
-
-            {/* Card List */}
+            {/* Player Search Section */}
             <View
               style={{
                 backgroundColor: "#0A2238",
@@ -607,56 +657,177 @@ export default function AdminPortal() {
                 borderColor: "rgba(255,255,255,0.08)",
               }}
             >
-              <Text style={{ color: "#EAF2FF", fontSize: 18, fontWeight: "900", marginBottom: 12 }}>
-                Recent Cards
-              </Text>
-              <ScrollView style={{ maxHeight: 500 }}>
-                {(matchEvents ?? [])
-                  .filter((e: any) => e.type === "YELLOW" || e.type === "RED")
-                  .slice()
-                  .reverse()
-                  .slice(0, 20)
-                  .map((card: any) => {
-                    const player = (players ?? []).find((p: any) => p.id === card.playerId);
-                    const team = (teams ?? []).find((t: any) => t.id === card.teamId);
-                    return (
-                      <View
-                        key={card.id}
-                        style={{
-                          backgroundColor: "#0B2842",
-                          padding: 12,
-                          borderRadius: 12,
-                          marginBottom: 8,
-                          borderLeftWidth: 4,
-                          borderLeftColor: card.type === "YELLOW" ? "#F2D100" : "#FF3B30",
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                          <View>
-                            <Text style={{ color: "#EAF2FF", fontWeight: "900" }}>
-                              {card.type === "YELLOW" ? "🟨" : "🟥"} {player?.fullName || "Unknown"}
-                            </Text>
-                            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
-                              {team?.name || "Unknown Team"}
-                            </Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <Text style={{ color: "#22C6D2", fontSize: 18, fontWeight: "900" }}>
+                  🔍 Player Search
+                </Text>
+                {searchResults.length > 0 && (
+                  <TouchableOpacity
+                    onPress={exportPlayerSearch}
+                    style={{
+                      backgroundColor: "#34C759",
+                      paddingVertical: 8,
+                      paddingHorizontal: 12,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 11 }}>
+                      📤 Export ({searchResults.length})
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              <TextInput
+                value={playerSearchQuery}
+                onChangeText={setPlayerSearchQuery}
+                placeholder="Search by name, number, team, or position..."
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                style={{
+                  backgroundColor: "#0B2842",
+                  color: "#EAF2FF",
+                  padding: 14,
+                  borderRadius: 12,
+                  fontWeight: "900",
+                  fontSize: 16,
+                  marginBottom: 16,
+                }}
+              />
+
+              {playerSearchQuery && searchResults.length > 0 && (
+                <View>
+                  <Text style={{ color: "#9FB3C8", marginBottom: 12 }}>
+                    Found {searchResults.length} player{searchResults.length !== 1 ? 's' : ''}
+                  </Text>
+                  
+                  <ScrollView style={{ maxHeight: 400 }}>
+                    {searchResults.map((player: any) => {
+                      const team = leagueTeams.find((t: any) => t.id === player.teamId);
+                      const playerCheckIns = player.checkInHistory?.length || 0;
+                      const playerGoals = (matchEvents ?? []).filter((e: any) => 
+                        e.playerId === player.id && e.type === 'GOAL'
+                      ).length;
+
+                      return (
+                        <TouchableOpacity
+                          key={player.id}
+                          onPress={() => setSelectedPlayer(selectedPlayer?.id === player.id ? null : player)}
+                          style={{
+                            backgroundColor: selectedPlayer?.id === player.id ? "#0B2842" : "#061A2B",
+                            padding: 14,
+                            borderRadius: 12,
+                            marginBottom: 10,
+                            borderWidth: 2,
+                            borderColor: selectedPlayer?.id === player.id ? "#22C6D2" : "rgba(255,255,255,0.1)",
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                            {team && (
+                              <Image
+                                source={getLogoSource(team.logoKey)}
+                                style={{ width: 40, height: 40, borderRadius: 20 }}
+                              />
+                            )}
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
+                                #{player.shirtNumber} {player.fullName}
+                              </Text>
+                              <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 2 }}>
+                                {team?.name} • {player.position}
+                              </Text>
+                            </View>
                           </View>
-                          <View style={{ alignItems: "flex-end" }}>
-                            <Text
-                              style={{
-                                color: card.type === "YELLOW" ? "#F2D100" : "#FF3B30",
-                                fontWeight: "900",
-                              }}
-                            >
-                              ${card.type === "YELLOW" ? "25.00" : "75.00"}
-                            </Text>
-                            <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
-                              {card.minute}'
-                            </Text>
-                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
+
+              {!playerSearchQuery && (
+                <View style={{ alignItems: "center", paddingVertical: 30 }}>
+                  <Text style={{ fontSize: 48 }}>🔍</Text>
+                  <Text style={{ color: "#9FB3C8", marginTop: 12, textAlign: "center" }}>
+                    Search for players by name, number, team, or position
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {/* Match Forms Section */}
+            <View
+              style={{
+                backgroundColor: "#0A2238",
+                padding: 16,
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.08)",
+              }}
+            >
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <Text style={{ color: "#F2D100", fontSize: 18, fontWeight: "900" }}>
+                  📋 Match Forms
+                </Text>
+                <TouchableOpacity
+                  onPress={exportAllMatchForms}
+                  style={{
+                    backgroundColor: "#34C759",
+                    paddingVertical: 10,
+                    paddingHorizontal: 16,
+                    borderRadius: 10,
+                  }}
+                >
+                  <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>
+                    📦 Export All ({leagueMatches.length})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ maxHeight: 300 }}>
+                {leagueMatches.length === 0 ? (
+                  <View style={{ alignItems: "center", paddingVertical: 40 }}>
+                    <Text style={{ fontSize: 48 }}>📋</Text>
+                    <Text style={{ color: "#9FB3C8", marginTop: 12 }}>
+                      No matches found
+                    </Text>
+                  </View>
+                ) : (
+                  leagueMatches.map((match: any) => (
+                    <View
+                      key={match.id}
+                      style={{
+                        backgroundColor: "#0B2842",
+                        padding: 14,
+                        borderRadius: 12,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
+                            {match.homeTeam} vs {match.awayTeam}
+                          </Text>
+                          <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 4 }}>
+                            {match.kickoffAt ? new Date(match.kickoffAt).toLocaleDateString() : 'TBD'}
+                          </Text>
                         </View>
+                        <TouchableOpacity
+                          onPress={() => exportMatchForm(match)}
+                          style={{
+                            backgroundColor: "#22C6D2",
+                            paddingVertical: 10,
+                            paddingHorizontal: 14,
+                            borderRadius: 8,
+                          }}
+                        >
+                          <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 12 }}>
+                            📄 Generate
+                          </Text>
+                        </TouchableOpacity>
                       </View>
-                    );
-                  })}
+                    </View>
+                  ))
+                )}
               </ScrollView>
             </View>
           </View>
@@ -667,7 +838,6 @@ export default function AdminPortal() {
           <View style={{ gap: 16 }}>
             <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>📸 Check-In Management</Text>
 
-            {/* Check-In Stats */}
             <View style={{ flexDirection: "row", gap: 12 }}>
               <View
                 style={{
@@ -682,9 +852,6 @@ export default function AdminPortal() {
                 <Text style={{ color: "#9FB3C8", fontSize: 12 }}>Total Check-Ins</Text>
                 <Text style={{ color: "#22C6D2", fontSize: 32, fontWeight: "900", marginTop: 4 }}>
                   {totalCheckIns}
-                </Text>
-                <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 4 }}>
-                  All time
                 </Text>
               </View>
 
@@ -702,13 +869,9 @@ export default function AdminPortal() {
                 <Text style={{ color: "#34C759", fontSize: 32, fontWeight: "900", marginTop: 4 }}>
                   {todaysCheckIns}
                 </Text>
-                <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 4 }}>
-                  check-ins
-                </Text>
               </View>
             </View>
 
-            {/* Dashboard Button */}
             <TouchableOpacity
               onPress={() => router.push('/admin/check-ins')}
               style={{
@@ -716,130 +879,38 @@ export default function AdminPortal() {
                 padding: 18,
                 borderRadius: 14,
                 alignItems: "center",
-                flexDirection: "row",
-                justifyContent: "center",
-                gap: 10,
               }}
             >
-              <Text style={{ fontSize: 28 }}>📸</Text>
               <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 18 }}>
-                Open Check-In Dashboard
+                📸 Open Check-In Dashboard
               </Text>
             </TouchableOpacity>
-
-            {/* Features List */}
-            <View
-              style={{
-                backgroundColor: "#0A2238",
-                padding: 16,
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: "rgba(255,255,255,0.08)",
-              }}
-            >
-              <Text style={{ color: "#EAF2FF", fontSize: 16, fontWeight: "900", marginBottom: 12 }}>
-                Dashboard Features
-              </Text>
-              <View style={{ gap: 10 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>✅</Text>
-                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
-                    Review all player check-ins with face match scores
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>🔍</Text>
-                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
-                    Filter by match, status, and approval state
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>⚠️</Text>
-                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
-                    Identify borderline cases needing manual review
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>📄</Text>
-                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
-                    Export detailed reports for audit trails
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                  <Text style={{ fontSize: 20 }}>👍</Text>
-                  <Text style={{ color: "#9FB3C8", flex: 1 }}>
-                    Manually approve or reject check-in attempts
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Recent Check-Ins Preview */}
-            {totalCheckIns > 0 && (
-              <View
-                style={{
-                  backgroundColor: "#0A2238",
-                  padding: 16,
-                  borderRadius: 16,
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.08)",
-                }}
-              >
-                <Text style={{ color: "#EAF2FF", fontSize: 16, fontWeight: "900", marginBottom: 12 }}>
-                  Recent Check-Ins Preview
-                </Text>
-                <Text style={{ color: "#9FB3C8", textAlign: "center", paddingVertical: 20 }}>
-                  Open dashboard to view full check-in history
-                </Text>
-              </View>
-            )}
           </View>
         )}
 
-        {/* RULES TAB */}
-        {activeTab === "RULES" && (
+        {activeTab === "FINANCE" && (
           <View style={{ gap: 16 }}>
-            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>⚙️ League Rules & Settings</Text>
+            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>💰 Financial Management</Text>
             <Text style={{ color: "#9FB3C8", textAlign: "center", paddingVertical: 40 }}>
-              Settings panel coming in next update...
+              Finance panel coming soon...
             </Text>
           </View>
         )}
 
-        {/* ACTIONS TAB */}
-        {activeTab === "ACTIONS" && (
+        {activeTab === "CARDS" && (
           <View style={{ gap: 16 }}>
-            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>⚡ Quick Actions</Text>
-
-            {/* Quick Add Player */}
-            <TouchableOpacity
-              onPress={() => setShowAddPlayerModal(true)}
-              style={{
-                backgroundColor: "#34C759",
-                padding: 16,
-                borderRadius: 12,
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-              }}
-            >
-              <Text style={{ fontSize: 24 }}>👤</Text>
-              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 16 }}>Quick Add Player</Text>
-            </TouchableOpacity>
-
-            <Text style={{ color: "#9FB3C8", textAlign: "center", paddingVertical: 20 }}>
-              More quick actions coming in next update...
+            <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>🟨 Card Tracking</Text>
+            <Text style={{ color: "#9FB3C8", textAlign: "center", paddingVertical: 40 }}>
+              Cards panel coming soon...
             </Text>
           </View>
         )}
 
-        {/* ANALYTICS TAB */}
         {activeTab === "ANALYTICS" && (
           <View style={{ gap: 16 }}>
             <Text style={{ color: "#F2D100", fontSize: 22, fontWeight: "900" }}>📈 Analytics & Reports</Text>
             <Text style={{ color: "#9FB3C8", textAlign: "center", paddingVertical: 40 }}>
-              Analytics dashboard coming in next update...
+              Analytics dashboard coming soon...
             </Text>
           </View>
         )}
@@ -870,7 +941,6 @@ export default function AdminPortal() {
             </View>
 
             <ScrollView contentContainerStyle={{ gap: 16, paddingBottom: 20 }}>
-              {/* Player Name */}
               <View>
                 <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Player Name *</Text>
                 <TextInput
@@ -889,7 +959,6 @@ export default function AdminPortal() {
                 />
               </View>
 
-              {/* Shirt Number */}
               <View>
                 <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Shirt Number</Text>
                 <TextInput
@@ -909,7 +978,6 @@ export default function AdminPortal() {
                 />
               </View>
 
-              {/* Team Selection */}
               <View>
                 <Text style={{ color: "#EAF2FF", fontWeight: "900", marginBottom: 8 }}>Select Team *</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -925,8 +993,7 @@ export default function AdminPortal() {
                           minWidth: 120,
                           alignItems: "center",
                           borderWidth: 2,
-                          borderColor:
-                            selectedTeamForPlayer === team.id ? "#34C759" : "rgba(255,255,255,0.1)",
+                          borderColor: selectedTeamForPlayer === team.id ? "#34C759" : "rgba(255,255,255,0.1)",
                         }}
                       >
                         <Image
@@ -950,13 +1017,11 @@ export default function AdminPortal() {
               </View>
             </ScrollView>
 
-            {/* Add Button */}
             <TouchableOpacity
               onPress={handleAddPlayer}
               disabled={!newPlayerName || !selectedTeamForPlayer}
               style={{
-                backgroundColor:
-                  newPlayerName && selectedTeamForPlayer ? "#34C759" : "rgba(255,255,255,0.1)",
+                backgroundColor: newPlayerName && selectedTeamForPlayer ? "#34C759" : "rgba(255,255,255,0.1)",
                 padding: 16,
                 borderRadius: 14,
                 alignItems: "center",

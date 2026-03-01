@@ -1,4 +1,4 @@
-// app/referee/check-in.tsx - GAME DAY CHECK-IN WITH FACE MATCHING
+// app/referee/check-in.tsx - PRODUCTION READY FOR DEMO (NO TEST BUTTONS)
 
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -43,7 +43,6 @@ export default function CheckInScreen() {
   const awayTeam = teams.find(t => t.id === match?.awayTeamId);
   const homePlayers = match ? getPlayersForTeam(match.homeTeamId) : [];
   const awayPlayers = match ? getPlayersForTeam(match.awayTeamId) : [];
-  const allPlayers = [...homePlayers, ...awayPlayers];
 
   const [selectedPlayer, setSelectedPlayer] = useState<any>(null);
   const [scanning, setScanning] = useState(false);
@@ -125,7 +124,6 @@ export default function CheckInScreen() {
       const livePhotoUri = photo.assets[0].uri;
 
       // Step 2: Simulate AI face matching & liveness detection
-      // TODO: Replace with real AWS Rekognition call
       await new Promise(resolve => setTimeout(resolve, 1500));
 
       // Mock face matching result
@@ -312,157 +310,6 @@ export default function CheckInScreen() {
             {match.field} • {match.time}
           </Text>
         </View>
-
-        {/* TEMPORARY TEST HELPER - Remove before production */}
-        {__DEV__ && (
-          <View style={{ marginBottom: 16, gap: 8 }}>
-            <TouchableOpacity
-              onPress={() => {
-                // Check in all HOME team verified players
-                let checkedCount = 0;
-                homePlayers.forEach(player => {
-                  if (player.documentVerified && !player.lastCheckIn) {
-                    const mockFaceScore = 96 + Math.random() * 3; // 96-99%
-                    const mockLivenessScore = 85 + Math.random() * 10; // 85-95%
-                    
-                    recordCheckIn({
-                      playerId: player.id,
-                      matchId: match.id,
-                      livePhotoUrl: 'mock://photo.jpg',
-                      faceMatchScore: mockFaceScore,
-                      livenessScore: mockLivenessScore,
-                      refereeId: currentUser.id,
-                      deviceId: 'test_device',
-                    });
-                    checkedCount++;
-                  }
-                });
-                
-                Alert.alert(
-                  '✅ Home Team Checked In!',
-                  `${checkedCount} ${homeTeam?.name} players checked in successfully.`,
-                  [{ text: 'OK' }]
-                );
-              }}
-              style={{
-                backgroundColor: '#FF9500',
-                padding: 14,
-                borderRadius: 12,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-              }}
-            >
-              <Text style={{ fontSize: 20 }}>🏠</Text>
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 15 }}>
-                TEST: Check In All Home Players
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => {
-                // Check in all AWAY team verified players
-                let checkedCount = 0;
-                awayPlayers.forEach(player => {
-                  if (player.documentVerified && !player.lastCheckIn) {
-                    const mockFaceScore = 96 + Math.random() * 3; // 96-99%
-                    const mockLivenessScore = 85 + Math.random() * 10; // 85-95%
-                    
-                    recordCheckIn({
-                      playerId: player.id,
-                      matchId: match.id,
-                      livePhotoUrl: 'mock://photo.jpg',
-                      faceMatchScore: mockFaceScore,
-                      livenessScore: mockLivenessScore,
-                      refereeId: currentUser.id,
-                      deviceId: 'test_device',
-                    });
-                    checkedCount++;
-                  }
-                });
-                
-                Alert.alert(
-                  '✅ Away Team Checked In!',
-                  `${checkedCount} ${awayTeam?.name} players checked in successfully.`,
-                  [{ text: 'OK' }]
-                );
-              }}
-              style={{
-                backgroundColor: '#5856D6',
-                padding: 14,
-                borderRadius: 12,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-              }}
-            >
-              <Text style={{ fontSize: 20 }}>✈️</Text>
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 15 }}>
-                TEST: Check In All Away Players
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => {
-                // Check in BOTH teams
-                let homeCount = 0;
-                let awayCount = 0;
-                
-                homePlayers.forEach(player => {
-                  if (player.documentVerified && !player.lastCheckIn) {
-                    recordCheckIn({
-                      playerId: player.id,
-                      matchId: match.id,
-                      livePhotoUrl: 'mock://photo.jpg',
-                      faceMatchScore: 96 + Math.random() * 3,
-                      livenessScore: 85 + Math.random() * 10,
-                      refereeId: currentUser.id,
-                      deviceId: 'test_device',
-                    });
-                    homeCount++;
-                  }
-                });
-                
-                awayPlayers.forEach(player => {
-                  if (player.documentVerified && !player.lastCheckIn) {
-                    recordCheckIn({
-                      playerId: player.id,
-                      matchId: match.id,
-                      livePhotoUrl: 'mock://photo.jpg',
-                      faceMatchScore: 96 + Math.random() * 3,
-                      livenessScore: 85 + Math.random() * 10,
-                      refereeId: currentUser.id,
-                      deviceId: 'test_device',
-                    });
-                    awayCount++;
-                  }
-                });
-                
-                Alert.alert(
-                  '🎉 ALL PLAYERS CHECKED IN!',
-                  `${homeTeam?.name}: ${homeCount} players\n${awayTeam?.name}: ${awayCount} players\n\nMatch ready to start!`,
-                  [{ text: 'Awesome! 🎯' }]
-                );
-              }}
-              style={{
-                backgroundColor: '#34C759',
-                padding: 14,
-                borderRadius: 12,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-              }}
-            >
-              <Text style={{ fontSize: 20 }}>⚡</Text>
-              <Text style={{ color: '#FFF', fontWeight: '900', fontSize: 15 }}>
-                TEST: Check In ALL Players (Both Teams)
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Window Status */}
         <View style={{

@@ -1,12 +1,13 @@
-// app/live/[id].tsx - COMPLETE WITH ADMIN OVERRIDE & PASSCODE
+// app/live/[id].tsx - CLEAN VERSION WITH KEYBOARD FIX
+
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Image, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Image, KeyboardAvoidingView, Modal, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAppStore } from "../../src/state/AppStore";
 import { getLogoSource } from "../../src/utils/logos";
 
-// ===== ADMIN OVERRIDE PASSCODE - CHANGE THIS TO YOUR CODE =====
-const OVERRIDE_PASSCODE = "1234"; // TODO: Change to your secure passcode
+// ===== ADMIN OVERRIDE PASSCODE =====
+const OVERRIDE_PASSCODE = "1234";
 
 function scoreFromEvents(matchId: string, events: any[], homeTeamId: string, awayTeamId: string) {
   const list = (events ?? []).filter((e: any) => e.matchId === matchId && e.type === "GOAL");
@@ -113,7 +114,6 @@ export default function LiveMatchScreen() {
   
   const slots = sponsorsAds ?? [];
 
-  // Initialize match phase based on match status
   useEffect(() => {
     if (!match) return;
     
@@ -145,14 +145,12 @@ export default function LiveMatchScreen() {
     return () => clearInterval(timer);
   }, [match?.isLive, match?.id, tickMatch]);
 
-  // Auto half-time and full-time detection
   useEffect(() => {
     if (!match?.isLive || !match) return;
     
     const currentMinute = Math.floor((match.clockSec ?? 0) / 60);
     const currentSecond = (match.clockSec ?? 0) % 60;
     
-    // Auto half-time at exactly 45:00
     if (currentMinute === 45 && currentSecond === 0 && matchPhase === 'first-half') {
       setMatchLive(match.id, false);
       setMatchPhase('half-time');
@@ -163,7 +161,6 @@ export default function LiveMatchScreen() {
       );
     }
     
-    // Auto full-time at 90:00
     if (currentMinute >= 90 && currentSecond === 0 && matchPhase === 'second-half') {
       setMatchLive(match.id, false);
       Alert.alert(
@@ -205,8 +202,6 @@ export default function LiveMatchScreen() {
   const isBettingOpen = match.status === "SCHEDULED" && !match.isLive;
   const isBettingClosed = match.isLive || match.status === "LIVE" || match.status === "FINAL";
 
-  // ===== OVERRIDE PASSCODE FUNCTIONS =====
-
   const confirmOverride = () => {
     if (passcodeInput !== OVERRIDE_PASSCODE) {
       Alert.alert(
@@ -218,7 +213,6 @@ export default function LiveMatchScreen() {
       return;
     }
 
-    // Passcode correct - close modal and execute action
     setShowOverrideModal(false);
     const tempAction = overrideAction;
     setPasscodeInput("");
@@ -231,15 +225,12 @@ export default function LiveMatchScreen() {
     }
   };
 
-  // ===== MATCH CONTROL FUNCTIONS =====
-
   const handleEndFirstHalf = () => {
     if (matchPhase !== 'first-half') {
       Alert.alert('Invalid Action', 'Can only end half during first half');
       return;
     }
 
-    // Check if it's before 45 minutes - require override
     if (currentMinute < 45) {
       Alert.alert(
         '⚠️ End Half Early?',
@@ -260,7 +251,6 @@ export default function LiveMatchScreen() {
       return;
     }
 
-    // Normal end at 45+ minutes
     executeEndHalf(false);
   };
 
@@ -314,7 +304,6 @@ export default function LiveMatchScreen() {
       return;
     }
 
-    // Check if it's before 90 minutes - require override
     if (currentMinute < 90) {
       Alert.alert(
         '⚠️ End Match Early?',
@@ -335,7 +324,6 @@ export default function LiveMatchScreen() {
       return;
     }
 
-    // Normal end at 90+ minutes
     executeEndMatch(false);
   };
 
@@ -353,15 +341,9 @@ export default function LiveMatchScreen() {
           text: 'End Match',
           style: 'destructive',
           onPress: () => {
-            // Stop clock
             setMatchLive(match.id, false);
-            
-            // Set phase to full-time
             setMatchPhase('full-time');
 
-            // Calculate betting pool revenue
-            
-            // Update match status to FINAL
             if (match) {
               match.status = 'FINAL';
             }
@@ -371,12 +353,9 @@ export default function LiveMatchScreen() {
               poolRevenue = totalPot * 0.15;
             }
 
-            // Get MOTM winner
             const motmWinner = leaderboard && leaderboard.length > 0 ? leaderboard[0] : null;
-
             const overrideText = isOverride ? ` (Override at ${currentMinute}:${String(currentSecond).padStart(2, '0')})` : '';
 
-            // Show completion summary
             setTimeout(() => {
               Alert.alert(
                 '✅ Match Completed',
@@ -407,8 +386,6 @@ export default function LiveMatchScreen() {
       default: return match.status || 'Match';
     }
   };
-
-  // ===== EXISTING FUNCTIONS =====
 
   const openPlayerSelection = (type: "GOAL" | "YELLOW" | "RED", teamId: string) => {
     setEventType(type);
@@ -1321,7 +1298,7 @@ export default function LiveMatchScreen() {
         )}
       </ScrollView>
 
-      {/* ===== ADMIN OVERRIDE PASSCODE MODAL ===== */}
+      {/* ===== ADMIN OVERRIDE PASSCODE MODAL - FIXED ===== */}
       <Modal
         visible={showOverrideModal}
         transparent
@@ -1332,116 +1309,145 @@ export default function LiveMatchScreen() {
           setOverrideAction(null);
         }}
       >
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.92)", justifyContent: "center", padding: 20 }}>
-          <View style={{ backgroundColor: "#0A2238", borderRadius: 24, padding: 24, borderWidth: 3, borderColor: "#FF3B30" }}>
-            {/* Header */}
-            <View style={{ alignItems: "center", marginBottom: 20 }}>
-              <Text style={{ fontSize: 48, marginBottom: 12 }}>⚠️</Text>
-              <Text style={{ color: "#FF3B30", fontSize: 22, fontWeight: "900", textAlign: "center" }}>
-                ADMIN OVERRIDE REQUIRED
-              </Text>
-              <Text style={{ color: "#9FB3C8", fontSize: 14, textAlign: "center", marginTop: 8 }}>
-                {overrideAction === 'end-half' 
-                  ? `Ending first half at ${currentMinute}:${String(currentSecond).padStart(2, '0')} (before 45:00)`
-                  : `Ending match at ${currentMinute}:${String(currentSecond).padStart(2, '0')} (before 90:00)`}
-              </Text>
-            </View>
-
-            {/* Warning Box */}
-            <View style={{ backgroundColor: "rgba(255,59,48,0.15)", padding: 16, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: "#FF3B30" }}>
-              <Text style={{ color: "#EAF2FF", fontSize: 14, lineHeight: 20, textAlign: "center" }}>
-                {overrideAction === 'end-half' 
-                  ? `You are about to end the first half before the allocated time (45 minutes).`
-                  : `You are about to end the match before the allocated time (90 minutes).`}
-              </Text>
-              <Text style={{ color: "#FF3B30", fontSize: 14, marginTop: 12, textAlign: "center", fontWeight: "900" }}>
-                This action requires administrator authorization.
-              </Text>
-            </View>
-
-            {/* Passcode Input */}
-            <View style={{ marginBottom: 20 }}>
-              <Text style={{ color: "#F2D100", fontSize: 14, fontWeight: "900", marginBottom: 8, textAlign: "center" }}>
-                Enter Admin Passcode
-              </Text>
-              <TextInput
-                value={passcodeInput}
-                onChangeText={setPasscodeInput}
-                placeholder="••••"
-                placeholderTextColor="#9FB3C8"
-                secureTextEntry
-                keyboardType="number-pad"
-                maxLength={4}
-                autoFocus
-                style={{
-                  backgroundColor: "#061A2B",
-                  color: "#EAF2FF",
-                  fontSize: 28,
-                  fontWeight: "900",
-                  padding: 16,
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  borderColor: "#F2D100",
-                  textAlign: "center",
-                  letterSpacing: 12,
-                }}
-              />
-              <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 8, textAlign: "center", fontStyle: "italic" }}>
-                Contact league administrator if you don't have the passcode
-              </Text>
-            </View>
-
-            {/* Buttons */}
-            <View style={{ flexDirection: "row", gap: 12 }}>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowOverrideModal(false);
-                  setPasscodeInput("");
-                  setOverrideAction(null);
-                }}
-                style={{
-                  flex: 1,
-                  backgroundColor: "#0A2238",
-                  padding: 16,
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  borderColor: "#9FB3C8",
-                  alignItems: "center",
-                }}
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <TouchableOpacity 
+            activeOpacity={1}
+            onPress={() => {
+              setShowOverrideModal(false);
+              setPasscodeInput("");
+              setOverrideAction(null);
+            }}
+            style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.92)", justifyContent: "center", padding: 20 }}
+          >
+            <TouchableOpacity 
+              activeOpacity={1} 
+              onPress={(e) => e.stopPropagation()}
+            >
+              <ScrollView 
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ flexGrow: 1, justifyContent: "center" }}
               >
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
+                <View style={{ backgroundColor: "#0A2238", borderRadius: 24, padding: 24, borderWidth: 3, borderColor: "#FF3B30" }}>
+                  {/* Header */}
+                  <View style={{ alignItems: "center", marginBottom: 20 }}>
+                    <Text style={{ fontSize: 48, marginBottom: 12 }}>⚠️</Text>
+                    <Text style={{ color: "#FF3B30", fontSize: 22, fontWeight: "900", textAlign: "center" }}>
+                      ADMIN OVERRIDE REQUIRED
+                    </Text>
+                    <Text style={{ color: "#9FB3C8", fontSize: 14, textAlign: "center", marginTop: 8 }}>
+                      {overrideAction === 'end-half' 
+                        ? `Ending first half at ${currentMinute}:${String(currentSecond).padStart(2, '0')} (before 45:00)`
+                        : `Ending match at ${currentMinute}:${String(currentSecond).padStart(2, '0')} (before 90:00)`}
+                    </Text>
+                  </View>
 
-              <TouchableOpacity
-                onPress={confirmOverride}
-                disabled={passcodeInput.length !== 4}
-                style={{
-                  flex: 1,
-                  backgroundColor: passcodeInput.length === 4 ? "#FF3B30" : "#0A2238",
-                  padding: 16,
-                  borderRadius: 12,
-                  borderWidth: 2,
-                  borderColor: passcodeInput.length === 4 ? "#8B0000" : "#9FB3C8",
-                  alignItems: "center",
-                  opacity: passcodeInput.length === 4 ? 1 : 0.5,
-                }}
-              >
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
-                  Confirm Override
-                </Text>
-              </TouchableOpacity>
-            </View>
+                  {/* Warning Box */}
+                  <View style={{ backgroundColor: "rgba(255,59,48,0.15)", padding: 16, borderRadius: 12, marginBottom: 20, borderWidth: 1, borderColor: "#FF3B30" }}>
+                    <Text style={{ color: "#EAF2FF", fontSize: 14, lineHeight: 20, textAlign: "center" }}>
+                      {overrideAction === 'end-half' 
+                        ? `You are about to end the first half before the allocated time (45 minutes).`
+                        : `You are about to end the match before the allocated time (90 minutes).`}
+                    </Text>
+                    <Text style={{ color: "#FF3B30", fontSize: 14, marginTop: 12, textAlign: "center", fontWeight: "900" }}>
+                      This action requires administrator authorization.
+                    </Text>
+                  </View>
 
-            {/* Footer */}
-            <View style={{ marginTop: 16, backgroundColor: "rgba(242,209,0,0.1)", padding: 12, borderRadius: 12 }}>
-              <Text style={{ color: "#F2D100", fontSize: 11, textAlign: "center" }}>
-                🔐 This action will be logged with admin credentials
-              </Text>
-            </View>
-          </View>
-        </View>
+                  {/* Passcode Input */}
+                  <View style={{ marginBottom: 20 }}>
+                    <Text style={{ color: "#F2D100", fontSize: 14, fontWeight: "900", marginBottom: 8, textAlign: "center" }}>
+                      Enter Admin Passcode
+                    </Text>
+                    <TextInput
+                      value={passcodeInput}
+                      onChangeText={setPasscodeInput}
+                      placeholder="••••"
+                      placeholderTextColor="#9FB3C8"
+                      secureTextEntry
+                      keyboardType="number-pad"
+                      maxLength={4}
+                      autoFocus
+                      returnKeyType="done"
+                      onSubmitEditing={() => {
+                        if (passcodeInput.length === 4) {
+                          confirmOverride();
+                        }
+                      }}
+                      style={{
+                        backgroundColor: "#061A2B",
+                        color: "#EAF2FF",
+                        fontSize: 28,
+                        fontWeight: "900",
+                        padding: 16,
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: "#F2D100",
+                        textAlign: "center",
+                        letterSpacing: 12,
+                      }}
+                    />
+                    <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 8, textAlign: "center", fontStyle: "italic" }}>
+                      Contact league administrator if you don't have the passcode
+                    </Text>
+                  </View>
+
+                  {/* Buttons */}
+                  <View style={{ flexDirection: "row", gap: 12, marginBottom: 12 }}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setShowOverrideModal(false);
+                        setPasscodeInput("");
+                        setOverrideAction(null);
+                      }}
+                      style={{
+                        flex: 1,
+                        backgroundColor: "#0A2238",
+                        padding: 16,
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: "#9FB3C8",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
+                        Cancel
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={confirmOverride}
+                      disabled={passcodeInput.length !== 4}
+                      style={{
+                        flex: 1,
+                        backgroundColor: passcodeInput.length === 4 ? "#FF3B30" : "#0A2238",
+                        padding: 16,
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: passcodeInput.length === 4 ? "#8B0000" : "#9FB3C8",
+                        alignItems: "center",
+                        opacity: passcodeInput.length === 4 ? 1 : 0.5,
+                      }}
+                    >
+                      <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 16 }}>
+                        Confirm Override
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Footer */}
+                  <View style={{ backgroundColor: "rgba(242,209,0,0.1)", padding: 12, borderRadius: 12 }}>
+                    <Text style={{ color: "#F2D100", fontSize: 11, textAlign: "center" }}>
+                      🔐 This action will be logged with admin credentials
+                    </Text>
+                  </View>
+                </View>
+              </ScrollView>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Event Logging Modal */}

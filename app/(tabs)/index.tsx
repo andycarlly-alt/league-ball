@@ -1,15 +1,13 @@
-// app/(tabs)/index.tsx
-// ✅ COMPLETE FILE - YOUR ACTUAL HOME TAB WITH LIVE SCORE FIX
-// This is your exact file with score calculation added
+// app/(tabs)/index.tsx - OPTIMIZED VERSION
 
 import { useRouter } from "expo-router";
-import React, { useMemo } from "react";
-import { Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import HomeSlideshowCarousel from "../../components/HomeSlideshowCarousel";
 import { useAppStore } from "../../src/state/AppStore";
-import { getLogoSource } from "../../src/utils/logos";
 import { normalize, spacing } from "../../src/utils/responsive";
 
-// ✅ ADD THIS FUNCTION - Calculate scores from goal events
+// ✅ Calculate scores from goal events
 function scoreForMatch(matchId: string, events: any[], homeTeamId: string, awayTeamId: string) {
   const list = (events ?? []).filter((e: any) => e.matchId === matchId && e.type === "GOAL");
   let home = 0;
@@ -23,274 +21,602 @@ function scoreForMatch(matchId: string, events: any[], homeTeamId: string, awayT
 
 export default function HomeTab() {
   const router = useRouter();
-  // ✅ ADDED matchEvents to imports
-  const { currentUser, activeLeagueId, leagues, tournaments, matches, teams, players, can, matchEvents } = useAppStore() as any;
+  
+  // 🔥 Make sure matchEvents is included
+  const { 
+    currentUser, 
+    activeLeagueId, 
+    leagues, 
+    tournaments, 
+    matches, 
+    teams, 
+    players, 
+    can, 
+    matchEvents // ✅ This is correct!
+  } = useAppStore() as any;
+  
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   const activeLeague = useMemo(() => {
     return (leagues ?? []).find((l: any) => l.id === activeLeagueId);
   }, [leagues, activeLeagueId]);
 
-  const latestTournament = useMemo(() => {
-    const list = (tournaments ?? [])
-      .filter((t: any) => t.leagueId === activeLeagueId)
-      .sort((a: any, b: any) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-    return list[0];
-  }, [tournaments, activeLeagueId]);
-
-  const liveMatches = useMemo(() => {
+  // 🔥 OPTIMIZED: Calculate live matches with scores in one pass
+  const liveMatchesWithScores = useMemo(() => {
     return (matches ?? [])
       .filter((m: any) => m.leagueId === activeLeagueId && (m.status === "LIVE" || m.isLive))
-      .slice(0, 3);
+      .slice(0, 3)
+      .map((match: any) => ({
+        ...match,
+        score: scoreForMatch(match.id, matchEvents || [], match.homeTeamId, match.awayTeamId),
+        minute: match.clockSec ? Math.floor(match.clockSec / 60) : 0,
+      }));
+  }, [matches, activeLeagueId, matchEvents]); // ✅ matchEvents as dependency
+
+  const upcomingMatches = useMemo(() => {
+    return (matches ?? [])
+      .filter((m: any) => m.leagueId === activeLeagueId && m.status === "SCHEDULED")
+      .sort((a: any, b: any) => {
+        const dateA = new Date(a.kickoffAt || 0).getTime();
+        const dateB = new Date(b.kickoffAt || 0).getTime();
+        return dateA - dateB;
+      });
   }, [matches, activeLeagueId]);
 
-  const topTeams = useMemo(() => {
-    return (teams ?? [])
-      .filter((t: any) => t.leagueId === activeLeagueId)
-      .sort((a: any, b: any) => {
-        const aPoints = (a.wins || 0) * 3 + (a.draws || 0);
-        const bPoints = (b.wins || 0) * 3 + (b.draws || 0);
-        return bPoints - aPoints;
-      })
-      .slice(0, 5);
+  const leagueTeams = useMemo(() => {
+    return (teams ?? []).filter((t: any) => t.leagueId === activeLeagueId);
   }, [teams, activeLeagueId]);
 
-  const topScorers = useMemo(() => {
-    return (players ?? [])
-      .filter((p: any) => (p.goals || 0) > 0)
-      .sort((a: any, b: any) => (b.goals || 0) - (a.goals || 0))
-      .slice(0, 5);
-  }, [players]);
+  const leaguePlayers = useMemo(() => {
+    return (players ?? []).filter((p: any) => {
+      const team = leagueTeams.find((t: any) => t.id === p.teamId);
+      return !!team;
+    });
+  }, [players, leagueTeams]);
 
-  const vendorAds = [
-    { id: "vendor_1", company: "SoccerPro Sports", tagline: "Official Equipment Partner", offer: "20% off all cleats this week!", color: "#34C759" },
-    { id: "vendor_2", company: "Hydration Station", tagline: "Stay Hydrated, Play Better", offer: "Free water bottles for teams", color: "#22C6D2" },
-    { id: "vendor_3", company: "Sports Physio Clinic", tagline: "Recovery & Performance", offer: "First session 50% off", color: "#F2D100" },
+  // Active tournament info
+  const activeTournament = useMemo(() => {
+    return tournaments?.[0]; // Get first tournament for demo
+  }, [tournaments]);
+
+  const announcements = [
+    {
+      id: 'ann_1',
+      title: 'NVT VETERANS LEAGUE',
+      message: 'Spring Season 2026 is now underway! Check standings and upcoming matches.',
+      urgent: false,
+      actionText: 'View Schedule',
+    },
   ];
 
-  const getTeamPoints = (team: any) => (team.wins || 0) * 3 + (team.draws || 0);
+  const featuredSponsors = [
+    {
+      id: 'sponsor_1',
+      company: 'ATEM Foundation',
+      tagline: 'Supporting Our Veterans',
+      offer: 'Proud Sponsor of NVT Veterans League',
+      color: '#34C759',
+      tier: 'PLATINUM',
+      featured: true,
+    },
+    {
+      id: 'sponsor_2',
+      company: 'AFOSMA Foundation',
+      tagline: 'Building Stronger Communities',
+      offer: 'Official Community Partner',
+      color: '#22C6D2',
+      tier: 'PLATINUM',
+      featured: true,
+    },
+    {
+      id: 'sponsor_3',
+      company: 'JB Atlantic',
+      tagline: 'Excellence in Service',
+      offer: '15% Discount for League Members',
+      color: '#F2D100',
+      tier: 'GOLD',
+      featured: true,
+    },
+    {
+      id: 'sponsor_4',
+      company: 'BSF Bereavement',
+      tagline: 'Compassionate Support Services',
+      offer: 'Free Consultation for Veterans',
+      color: '#9B59B6',
+      tier: 'GOLD',
+      featured: true,
+    },
+  ];
+
+  const additionalSponsors = [
+    { id: "vendor_1", company: "Veterans Auto Repair", tagline: "10% off for league members", color: "#34C759" },
+    { id: "vendor_2", company: "Cornerstone Cafe", tagline: "Team meal discounts available", color: "#FF3B30" },
+    { id: "vendor_3", company: "Fitness First Gym", tagline: "Free month trial for players", color: "#22C6D2" },
+  ];
+
+  const handleSlidePress = (slide: any) => {
+    switch (slide.type) {
+      case 'leaderboard':
+        router.push('/(tabs)/teams');
+        break;
+      case 'scorers':
+        router.push('/(tabs)/teams');
+        break;
+      case 'announcement':
+        console.log('Announcement pressed:', slide.data);
+        break;
+      case 'sponsor':
+        console.log('Sponsor pressed:', slide.data);
+        break;
+      case 'match':
+        router.push(`/matches/${slide.data.id}`);
+        break;
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={{ 
+        flex: 1, 
+        backgroundColor: "#061A2B", 
+        justifyContent: "center", 
+        alignItems: "center" 
+      }}>
+        <ActivityIndicator size="large" color="#F2D100" />
+        <Text style={{ 
+          color: "#9FB3C8", 
+          marginTop: spacing.lg, 
+          fontSize: normalize(14) 
+        }}>
+          Loading dashboard...
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView 
       style={{ flex: 1, backgroundColor: "#061A2B" }} 
-      contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.huge }}
+      contentContainerStyle={{ paddingBottom: spacing.huge }}
+      showsVerticalScrollIndicator={false}
     >
-      {/* Header with Logo */}
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.xl }}>
-        <View style={{ flex: 1, paddingRight: spacing.md }}>
-          <Text style={{ color: "#F2D100", fontSize: normalize(28), fontWeight: "900" }}>NVT League</Text>
-          <Text style={{ color: "#9FB3C8", marginTop: spacing.xs, fontSize: normalize(14) }}>
-            {activeLeague?.name ?? "Veterans Football League"}
-          </Text>
-        </View>
-        
-        <View style={{ flexDirection: "row", gap: spacing.sm, alignItems: "center" }}>
-          {/* Logo */}
-          <View style={{ width: normalize(52), height: normalize(52), borderRadius: normalize(16), backgroundColor: "rgba(255,255,255,0.06)", borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", alignItems: "center", justifyContent: "center" }}>
-            <Image source={require("../../assets/logos/brand/nvt.png")} style={{ width: normalize(44), height: normalize(44), borderRadius: normalize(12) }} resizeMode="contain" />
+      {/* ✅ HEADER WITH NVT LOGO */}
+      <View style={{ 
+        backgroundColor: "#0A2238",
+        paddingTop: spacing.xl + 40,
+        paddingBottom: spacing.lg,
+        paddingHorizontal: spacing.lg,
+        marginBottom: spacing.lg,
+      }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+          {/* NVT Logo */}
+          <View style={{
+            width: normalize(55),
+            height: normalize(55),
+            borderRadius: normalize(28),
+            backgroundColor: "#F2D100",
+            alignItems: "center",
+            justifyContent: "center",
+            shadowColor: "#F2D100",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 8,
+          }}>
+            <Text style={{ fontSize: normalize(28), fontWeight: "900" }}>⚽</Text>
+          </View>
+
+          {/* Title */}
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#F2D100", fontSize: normalize(26), fontWeight: "900" }}>
+              NVT League
+            </Text>
+            <Text style={{ color: "#9FB3C8", marginTop: 2, fontSize: normalize(12) }}>
+              {activeLeague?.name ?? "Veterans Football League"}
+            </Text>
           </View>
         </View>
       </View>
 
-      {/* Action Buttons - Stack Vertically */}
-      <View style={{ marginBottom: spacing.xl }}>
-        {/* Admin Portal Button */}
-        {can("VIEW_ADMIN") && (
-          <TouchableOpacity 
-            onPress={() => router.push('/admin')} 
-            style={{ 
-              backgroundColor: "#F2D100", 
-              padding: spacing.lg, 
-              borderRadius: normalize(16), 
-              flexDirection: "row", 
-              alignItems: "center", 
-              justifyContent: "center", 
-              gap: spacing.sm, 
-              borderWidth: 2, 
-              borderColor: "#F2D100", 
-              elevation: 8,
-              marginBottom: spacing.md,
-            }}
-          >
-            <Text style={{ fontSize: normalize(28) }}>🎯</Text>
-            <View>
-              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(18) }}>Admin Portal</Text>
-              <Text style={{ color: "#061A2B", fontSize: normalize(12), marginTop: 2, opacity: 0.7 }}>Manage league, finances & more</Text>
-            </View>
-          </TouchableOpacity>
-        )}
+      {/* ✅ COMPACT ACTION BUTTONS */}
+      {(can("VIEW_ADMIN") || can("MANAGE_MATCH")) && (
+        <View style={{ 
+          paddingHorizontal: spacing.lg,
+          marginBottom: spacing.lg,
+          flexDirection: "row", 
+          gap: spacing.sm 
+        }}>
+          {can("VIEW_ADMIN") && (
+            <TouchableOpacity 
+              onPress={() => router.push('/admin')} 
+              style={{ 
+                flex: 1,
+                backgroundColor: "#F2D100",
+                paddingVertical: normalize(10),
+                borderRadius: normalize(10),
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: spacing.xs,
+              }}
+            >
+              <Text style={{ fontSize: normalize(16) }}>🎯</Text>
+              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(12) }}>
+                Admin
+              </Text>
+            </TouchableOpacity>
+          )}
 
-        {/* Referee Check-In Button */}
-        {can("MANAGE_MATCH") && (
-          <TouchableOpacity 
-            onPress={() => router.push('/referee/select-match')} 
-            style={{ 
-              backgroundColor: "#34C759", 
-              padding: spacing.lg, 
-              borderRadius: normalize(16), 
-              flexDirection: "row", 
-              alignItems: "center", 
-              justifyContent: "center", 
-              gap: spacing.sm, 
-              borderWidth: 2, 
-              borderColor: "#34C759", 
-              elevation: 8 
-            }}
-          >
-            <Text style={{ fontSize: normalize(28) }}>📸</Text>
-            <View>
-              <Text style={{ color: "#FFF", fontWeight: "900", fontSize: normalize(18) }}>Game Day Check-In</Text>
-              <Text style={{ color: "#FFF", fontSize: normalize(12), marginTop: 2, opacity: 0.9 }}>Verify players for matches</Text>
-            </View>
-          </TouchableOpacity>
-        )}
+          {can("MANAGE_MATCH") && (
+            <TouchableOpacity 
+              onPress={() => router.push('/referee/select-match')} 
+              style={{ 
+                flex: 1,
+                backgroundColor: "#34C759",
+                paddingVertical: normalize(10),
+                borderRadius: normalize(10),
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: spacing.xs,
+              }}
+            >
+              <Text style={{ fontSize: normalize(16) }}>📸</Text>
+              <Text style={{ color: "#FFF", fontWeight: "900", fontSize: normalize(12) }}>
+                Check-In
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* ✅ CENTERED SLIDESHOW */}
+      <View style={{ marginBottom: spacing.lg }}>
+        <HomeSlideshowCarousel
+          teams={leagueTeams}
+          players={leaguePlayers}
+          announcements={announcements}
+          sponsors={featuredSponsors}
+          upcomingMatch={upcomingMatches[0]}
+          onSlidePress={handleSlidePress}
+        />
       </View>
 
-      {/* ✅ LIVE MATCHES SECTION - NOW WITH REAL SCORES */}
-      {liveMatches.length > 0 && (
-        <View style={{ marginBottom: spacing.xl }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.md }}>
-            <View style={{ width: normalize(8), height: normalize(8), borderRadius: normalize(4), backgroundColor: "#FF3B30" }} />
-            <Text style={{ color: "#FF3B30", fontSize: normalize(18), fontWeight: "900" }}>LIVE NOW</Text>
-            <Text style={{ color: "#9FB3C8", fontSize: normalize(14) }}>({liveMatches.length})</Text>
+      {/* 🔥 LIVE MATCHES - OPTIMIZED WITH PRE-CALCULATED SCORES */}
+      {liveMatchesWithScores.length > 0 && (
+        <View style={{ marginBottom: spacing.lg, paddingHorizontal: spacing.lg }}>
+          <View style={{ 
+            flexDirection: "row", 
+            alignItems: "center", 
+            gap: spacing.sm, 
+            marginBottom: spacing.sm 
+          }}>
+            <View style={{ 
+              width: normalize(8), 
+              height: normalize(8), 
+              borderRadius: normalize(4), 
+              backgroundColor: "#FF3B30" 
+            }} />
+            <Text style={{ color: "#FF3B30", fontSize: normalize(16), fontWeight: "900" }}>
+              LIVE NOW
+            </Text>
+            <Text style={{ color: "#9FB3C8", fontSize: normalize(13) }}>
+              ({liveMatchesWithScores.length})
+            </Text>
           </View>
-          {liveMatches.map((match: any) => {
-            // ✅ CALCULATE REAL SCORES FROM EVENTS
-            const score = scoreForMatch(match.id, matchEvents || [], match.homeTeamId, match.awayTeamId);
-            const minute = match.clockSec ? Math.floor(match.clockSec / 60) : 0;
-            
-            return (
-              <TouchableOpacity 
-                key={match.id} 
-                onPress={() => router.push(`/live/${match.id}`)} 
+          
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: spacing.md }}
+          >
+            {liveMatchesWithScores.map((match: any) => {
+              const homeTeam = teams?.find((t: any) => t.id === match.homeTeamId);
+              const awayTeam = teams?.find((t: any) => t.id === match.awayTeamId);
+              
+              return (
+                <TouchableOpacity 
+                  key={match.id} 
+                  onPress={() => router.push(`/live/${match.id}`)}
+                  activeOpacity={0.7}
+                  style={{ 
+                    backgroundColor: "#0A2238", 
+                    borderRadius: normalize(12), 
+                    padding: spacing.md, 
+                    borderWidth: 2, 
+                    borderColor: "#FF3B30",
+                    width: normalize(200),
+                    shadowColor: "#FF3B30",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}
+                >
+                  {/* Live Indicator */}
+                  <View style={{ alignItems: "center", marginBottom: spacing.sm }}>
+                    <Text style={{ color: "#9FB3C8", fontSize: normalize(10), fontWeight: "900" }}>
+                      {match.minute > 0 ? `${match.minute}'` : "LIVE"}
+                    </Text>
+                    <View style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      marginTop: 2,
+                    }}>
+                      <View style={{
+                        width: normalize(6),
+                        height: normalize(6),
+                        borderRadius: normalize(3),
+                        backgroundColor: "#FF3B30",
+                      }} />
+                      <Text style={{ color: "#FF3B30", fontSize: normalize(9), fontWeight: "900" }}>
+                        LIVE
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  {/* Home Team */}
+                  <View style={{ 
+                    flexDirection: "row", 
+                    alignItems: "center", 
+                    justifyContent: "space-between", 
+                    marginBottom: spacing.xs 
+                  }}>
+                    <Text style={{ 
+                      color: "#EAF2FF", 
+                      fontWeight: "900", 
+                      fontSize: normalize(12), 
+                      flex: 1 
+                    }} numberOfLines={1}>
+                      {homeTeam?.name || match.homeTeam || "Home"}
+                    </Text>
+                    <Text style={{ 
+                      color: "#F2D100", 
+                      fontSize: normalize(20), 
+                      fontWeight: "900", 
+                      marginHorizontal: spacing.xs 
+                    }}>
+                      {match.score.home}
+                    </Text>
+                  </View>
+                  
+                  {/* Away Team */}
+                  <View style={{ 
+                    flexDirection: "row", 
+                    alignItems: "center", 
+                    justifyContent: "space-between" 
+                  }}>
+                    <Text style={{ 
+                      color: "#EAF2FF", 
+                      fontWeight: "900", 
+                      fontSize: normalize(12), 
+                      flex: 1 
+                    }} numberOfLines={1}>
+                      {awayTeam?.name || match.awayTeam || "Away"}
+                    </Text>
+                    <Text style={{ 
+                      color: "#F2D100", 
+                      fontSize: normalize(20), 
+                      fontWeight: "900", 
+                      marginHorizontal: spacing.xs 
+                    }}>
+                      {match.score.away}
+                    </Text>
+                  </View>
+                  
+                  {/* Field Info */}
+                  <View style={{ 
+                    marginTop: spacing.sm, 
+                    paddingTop: spacing.sm, 
+                    borderTopWidth: 1, 
+                    borderTopColor: "rgba(255,255,255,0.08)" 
+                  }}>
+                    <Text style={{ 
+                      color: "#9FB3C8", 
+                      fontSize: normalize(9), 
+                      textAlign: "center" 
+                    }} numberOfLines={1}>
+                      {match.field || match.venue || "Field TBD"}
+                    </Text>
+                  </View>
+
+                  {/* Tap to View Indicator */}
+                  <View style={{ 
+                    marginTop: spacing.xs,
+                    backgroundColor: "rgba(255,59,48,0.15)",
+                    paddingVertical: 4,
+                    borderRadius: 6,
+                    borderWidth: 1,
+                    borderColor: "rgba(255,59,48,0.3)",
+                  }}>
+                    <Text style={{ 
+                      color: "#FF3B30", 
+                      fontSize: normalize(8), 
+                      textAlign: "center",
+                      fontWeight: "900",
+                    }}>
+                      TAP TO VIEW LIVE →
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Sponsors Section */}
+      <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.lg }}>
+        <Text style={{ 
+          color: "#9FB3C8", 
+          fontSize: normalize(12), 
+          fontWeight: "900", 
+          marginBottom: spacing.md, 
+          textAlign: "center" 
+        }}>
+          OUR SPONSORS
+        </Text>
+        {additionalSponsors.map((vendor: any) => (
+          <View 
+            key={vendor.id} 
+            style={{ 
+              backgroundColor: "#0A2238", 
+              borderRadius: normalize(16), 
+              padding: spacing.lg, 
+              marginBottom: spacing.md, 
+              borderWidth: 1, 
+              borderColor: "rgba(255,255,255,0.08)" 
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
+              <View 
                 style={{ 
-                  backgroundColor: "#0A2238", 
-                  borderRadius: normalize(16), 
-                  padding: spacing.lg, 
-                  marginBottom: spacing.md, 
-                  borderWidth: 2, 
-                  borderColor: "#FF3B30" 
+                  width: normalize(50), 
+                  height: normalize(50), 
+                  borderRadius: normalize(12), 
+                  backgroundColor: vendor.color, 
+                  alignItems: "center", 
+                  justifyContent: "center" 
                 }}
               >
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <View style={{ flex: 1, alignItems: "center" }}>
-                    <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16), textAlign: "center" }}>
-                      {match.homeTeam || teams?.find((t: any) => t.id === match.homeTeamId)?.name || "Home"}
-                    </Text>
-                    {/* ✅ REAL SCORE FROM EVENTS */}
-                    <Text style={{ color: "#F2D100", fontSize: normalize(32), fontWeight: "900", marginTop: spacing.sm }}>
-                      {score.home}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: "center", paddingHorizontal: spacing.lg }}>
-                    <Text style={{ color: "#9FB3C8", fontSize: normalize(12), fontWeight: "900" }}>
-                      {minute > 0 ? `${minute}'` : "LIVE"}
-                    </Text>
-                    <Text style={{ color: "#FF3B30", fontSize: normalize(10), marginTop: spacing.xs }}>● LIVE</Text>
-                  </View>
-                  <View style={{ flex: 1, alignItems: "center" }}>
-                    <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(16), textAlign: "center" }}>
-                      {match.awayTeam || teams?.find((t: any) => t.id === match.awayTeamId)?.name || "Away"}
-                    </Text>
-                    {/* ✅ REAL SCORE FROM EVENTS */}
-                    <Text style={{ color: "#F2D100", fontSize: normalize(32), fontWeight: "900", marginTop: spacing.sm }}>
-                      {score.away}
-                    </Text>
-                  </View>
-                </View>
-                <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)" }}>
-                  <Text style={{ color: "#9FB3C8", fontSize: normalize(12), textAlign: "center" }}>
-                    {match.field || "Field TBD"} • Tap to watch live
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-
-      {/* Leaderboards Section */}
-      <View style={{ marginBottom: spacing.xl }}>
-        <Text style={{ color: "#F2D100", fontSize: normalize(20), fontWeight: "900", marginBottom: spacing.md }}>🏆 Leaderboards</Text>
-        
-        {/* Top Teams */}
-        <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.lg, marginBottom: spacing.md, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
-          <Text style={{ color: "#EAF2FF", fontSize: normalize(16), fontWeight: "900", marginBottom: spacing.md }}>Top Teams</Text>
-          {topTeams.length > 0 ? topTeams.map((team: any, index: number) => (
-            <View key={team.id} style={{ flexDirection: "row", alignItems: "center", paddingVertical: normalize(10), borderBottomWidth: index < topTeams.length - 1 ? 1 : 0, borderBottomColor: "rgba(255,255,255,0.05)" }}>
-              <View style={{ width: normalize(28), height: normalize(28), borderRadius: normalize(14), backgroundColor: index === 0 ? "#F2D100" : index === 1 ? "#9FB3C8" : index === 2 ? "#CD7F32" : "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center", marginRight: spacing.md }}>
-                <Text style={{ color: index < 3 ? "#061A2B" : "#9FB3C8", fontWeight: "900", fontSize: normalize(12) }}>{index + 1}</Text>
-              </View>
-              <Image source={getLogoSource(team.logoKey || "placeholder")} style={{ width: normalize(32), height: normalize(32), borderRadius: normalize(8), marginRight: spacing.md }} resizeMode="cover" />
-              <Text style={{ color: "#EAF2FF", fontWeight: "900", flex: 1, fontSize: normalize(14) }}>{team.name}</Text>
-              <View style={{ flexDirection: "row", gap: spacing.sm }}>
-                <Text style={{ color: "#34C759", fontWeight: "900", fontSize: normalize(12) }}>{getTeamPoints(team)} pts</Text>
-                <Text style={{ color: "#9FB3C8", fontSize: normalize(12) }}>{team.wins || 0}W-{team.draws || 0}D-{team.losses || 0}L</Text>
-              </View>
-            </View>
-          )) : <Text style={{ color: "#9FB3C8", textAlign: "center", paddingVertical: spacing.xl }}>No teams yet</Text>}
-          <TouchableOpacity onPress={() => router.push('/(tabs)/teams')} style={{ marginTop: spacing.md, backgroundColor: "rgba(242,209,0,0.1)", padding: normalize(10), borderRadius: normalize(12), alignItems: "center" }}>
-            <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: normalize(14) }}>View All Teams →</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Top Scorers */}
-        <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.lg, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
-          <Text style={{ color: "#EAF2FF", fontSize: normalize(16), fontWeight: "900", marginBottom: spacing.md }}>Top Scorers</Text>
-          {topScorers.length > 0 ? topScorers.map((player: any, index: number) => (
-            <View key={player.id} style={{ flexDirection: "row", alignItems: "center", paddingVertical: normalize(10), borderBottomWidth: index < topScorers.length - 1 ? 1 : 0, borderBottomColor: "rgba(255,255,255,0.05)" }}>
-              <View style={{ width: normalize(28), height: normalize(28), borderRadius: normalize(14), backgroundColor: index === 0 ? "#F2D100" : index === 1 ? "#9FB3C8" : index === 2 ? "#CD7F32" : "rgba(255,255,255,0.1)", alignItems: "center", justifyContent: "center", marginRight: spacing.md }}>
-                <Text style={{ color: index < 3 ? "#061A2B" : "#9FB3C8", fontWeight: "900", fontSize: normalize(12) }}>{index + 1}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(14) }}>{player.fullName || player.name}</Text>
-                <Text style={{ color: "#9FB3C8", fontSize: normalize(11), marginTop: spacing.xs }}>{teams?.find((t: any) => t.id === player.teamId)?.name || "Unknown Team"}</Text>
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.xs }}>
-                <Text style={{ fontSize: normalize(16) }}>⚽</Text>
-                <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: normalize(16) }}>{player.goals || 0}</Text>
-              </View>
-            </View>
-          )) : <Text style={{ color: "#9FB3C8", textAlign: "center", paddingVertical: spacing.xl }}>No scorers yet</Text>}
-        </View>
-      </View>
-
-      {/* Current Tournament Section */}
-      {latestTournament && (
-        <View style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.lg, marginBottom: spacing.xl, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
-          <Text style={{ color: "#F2D100", fontSize: normalize(16), fontWeight: "900", marginBottom: spacing.sm }}>Current Tournament</Text>
-          <Text style={{ color: "#EAF2FF", fontSize: normalize(18), fontWeight: "900" }}>{latestTournament.name}</Text>
-          <Text style={{ color: "#9FB3C8", marginTop: spacing.xs }}>{latestTournament.ageBand ? `Age ${latestTournament.ageBand}` : "Open Age"}</Text>
-          <TouchableOpacity onPress={() => router.push(`/tournaments/${latestTournament.id}`)} style={{ marginTop: spacing.md, backgroundColor: "#F2D100", padding: spacing.md, borderRadius: normalize(12), alignItems: "center" }}>
-            <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(14) }}>View Tournament →</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Sponsor/Vendor Ads Section */}
-      <View style={{ marginBottom: spacing.xl }}>
-        <Text style={{ color: "#9FB3C8", fontSize: normalize(12), fontWeight: "900", marginBottom: spacing.md, textAlign: "center" }}>SPONSORED BY</Text>
-        {vendorAds.map((vendor: any) => (
-          <View key={vendor.id} style={{ backgroundColor: "#0A2238", borderRadius: normalize(16), padding: spacing.lg, marginBottom: spacing.md, borderWidth: 2, borderColor: vendor.color }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.md }}>
-              <View style={{ width: normalize(50), height: normalize(50), borderRadius: normalize(12), backgroundColor: vendor.color, alignItems: "center", justifyContent: "center" }}>
                 <Text style={{ fontSize: normalize(24) }}>🏪</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(15) }}>{vendor.company}</Text>
-                <Text style={{ color: "#9FB3C8", fontSize: normalize(11), marginTop: spacing.xs }}>{vendor.tagline}</Text>
+                <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: normalize(15) }}>
+                  {vendor.company}
+                </Text>
+                <Text style={{ color: "#9FB3C8", fontSize: normalize(11), marginTop: spacing.xs }}>
+                  {vendor.tagline}
+                </Text>
               </View>
             </View>
-            <View style={{ marginTop: spacing.md, backgroundColor: `${vendor.color}20`, padding: normalize(10), borderRadius: normalize(10), borderWidth: 1, borderColor: vendor.color }}>
-              <Text style={{ color: vendor.color, fontWeight: "900", fontSize: normalize(13), textAlign: "center" }}>🎁 {vendor.offer}</Text>
-            </View>
-            <Text style={{ color: "#9FB3C8", fontSize: normalize(10), marginTop: spacing.sm, textAlign: "center" }}>Tap to learn more</Text>
           </View>
         ))}
       </View>
 
+      {/* ✅ TOURNAMENT INFO SECTION */}
+      {activeTournament && (
+        <View style={{ paddingHorizontal: spacing.lg, marginBottom: spacing.lg }}>
+          <Text style={{ 
+            color: "#F2D100", 
+            fontSize: normalize(14), 
+            fontWeight: "900", 
+            marginBottom: spacing.md,
+          }}>
+            🏆 CURRENT TOURNAMENT
+          </Text>
+          
+          <View style={{
+            backgroundColor: "#0A2238",
+            borderRadius: normalize(16),
+            padding: spacing.lg,
+            borderWidth: 1,
+            borderColor: "rgba(242,209,0,0.2)",
+          }}>
+            {/* Tournament Name */}
+            <Text style={{ 
+              color: "#EAF2FF", 
+              fontSize: normalize(18), 
+              fontWeight: "900",
+              marginBottom: spacing.sm,
+            }}>
+              {activeTournament.name}
+            </Text>
+
+            {/* Tournament Details Grid */}
+            <View style={{ gap: spacing.sm }}>
+              {/* Location */}
+              {activeTournament.location && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                  <Text style={{ fontSize: normalize(14) }}>📍</Text>
+                  <Text style={{ color: "#9FB3C8", fontSize: normalize(12), flex: 1 }}>
+                    {activeTournament.location}
+                  </Text>
+                </View>
+              )}
+
+              {/* Dates */}
+              {activeTournament.startDate && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                  <Text style={{ fontSize: normalize(14) }}>📅</Text>
+                  <Text style={{ color: "#9FB3C8", fontSize: normalize(12), flex: 1 }}>
+                    {activeTournament.startDate} {activeTournament.endDate ? `- ${activeTournament.endDate}` : ''}
+                  </Text>
+                </View>
+              )}
+
+              {/* Age Group */}
+              {activeTournament.ageRuleLabel && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                  <Text style={{ fontSize: normalize(14) }}>👥</Text>
+                  <Text style={{ color: "#9FB3C8", fontSize: normalize(12), flex: 1 }}>
+                    Age Group: {activeTournament.ageRuleLabel}
+                  </Text>
+                </View>
+              )}
+
+              {/* Teams */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+                <Text style={{ fontSize: normalize(14) }}>⚽</Text>
+                <Text style={{ color: "#9FB3C8", fontSize: normalize(12), flex: 1 }}>
+                  {leagueTeams.length} Teams Registered
+                </Text>
+              </View>
+
+              {/* Status */}
+              <View style={{ 
+                marginTop: spacing.sm,
+                paddingTop: spacing.sm,
+                borderTopWidth: 1,
+                borderTopColor: "rgba(255,255,255,0.08)",
+              }}>
+                <View style={{ 
+                  backgroundColor: "rgba(52,199,89,0.15)",
+                  paddingVertical: spacing.xs,
+                  paddingHorizontal: spacing.md,
+                  borderRadius: normalize(8),
+                  alignSelf: "flex-start",
+                }}>
+                  <Text style={{ color: "#34C759", fontSize: normalize(11), fontWeight: "900" }}>
+                    ● {activeTournament.status || 'ACTIVE'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* View Tournament Button */}
+            <TouchableOpacity
+              onPress={() => router.push('/(tabs)/tournaments')}
+              style={{
+                marginTop: spacing.md,
+                backgroundColor: "#F2D100",
+                paddingVertical: spacing.sm,
+                borderRadius: normalize(10),
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: normalize(12) }}>
+                View Full Details
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {/* Footer */}
-      <View style={{ alignItems: "center", paddingVertical: spacing.xl }}>
-        <Text style={{ color: "#9FB3C8", fontSize: normalize(11) }}>NVT Veterans League • Est. 2020</Text>
+      <View style={{ alignItems: "center", paddingVertical: spacing.xl, paddingHorizontal: spacing.lg }}>
+        <Text style={{ color: "#9FB3C8", fontSize: normalize(11) }}>
+          NVT Veterans League • Est. 2020
+        </Text>
       </View>
     </ScrollView>
   );

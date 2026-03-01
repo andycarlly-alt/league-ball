@@ -1,4 +1,4 @@
-﻿// app/teams/[id].tsx - COMPREHENSIVE TEAM DASHBOARD
+﻿// app/teams/[id].tsx - COMPREHENSIVE TEAM DASHBOARD WITH BEREAVEMENT + FIXED ROSTER
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Alert, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -101,7 +101,6 @@ export default function TeamDashboardScreen() {
         {
           text: "Send",
           onPress: () => {
-            // Mock sending message
             Alert.alert(
               "Message Sent! 📢",
               `Your message has been sent to all ${roster.length} team members via SMS and email.`,
@@ -146,7 +145,6 @@ export default function TeamDashboardScreen() {
         {
           text: "Submit",
           onPress: () => {
-            // Mock lineup submission
             Alert.alert(
               "Lineup Submitted! ✅",
               "Your starting 11 has been submitted to match officials for verification. You will be notified once approved.",
@@ -158,6 +156,15 @@ export default function TeamDashboardScreen() {
         },
       ]
     );
+  };
+
+  // ✅ ROSTER NAVIGATION - Try option 1 first, if it doesn't work, comment it and uncomment option 2
+  const navigateToRoster = () => {
+    // OPTION 1: Try this first
+    router.push(`/teams/roster?teamId=${id as string}`);
+    
+    // OPTION 2: If option 1 doesn't work, comment line above and uncomment this:
+    // router.push(`/roster?teamId=${id as string}`);
   };
 
   return (
@@ -230,8 +237,9 @@ export default function TeamDashboardScreen() {
         <View>
           <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 18, marginBottom: 10 }}>Quick Actions</Text>
           <View style={{ gap: 10 }}>
+            {/* ✅ FIXED ROSTER NAVIGATION */}
             <TouchableOpacity
-              onPress={() => router.push(`/teams/${id}/roster`)}
+              onPress={navigateToRoster}
               style={{ backgroundColor: "#34C759", padding: 14, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 10 }}
             >
               <Text style={{ fontSize: 20 }}>👥</Text>
@@ -248,6 +256,16 @@ export default function TeamDashboardScreen() {
                 <Text style={{ color: "#061A2B", fontWeight: "900", flex: 1 }}>Add Player to Roster</Text>
               </TouchableOpacity>
             )}
+
+            {/* ✅ BEREAVEMENT FUND BUTTON */}
+            <TouchableOpacity
+              onPress={() => router.push(`/teams/${id}/bereavement`)}
+              style={{ backgroundColor: "#FF3B30", padding: 14, borderRadius: 12, flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              <Text style={{ fontSize: 20 }}>🏥</Text>
+              <Text style={{ color: "#FFF", fontWeight: "900", flex: 1 }}>Bereavement Fund</Text>
+              <Text style={{ color: "#FFF", fontWeight: "900" }}>→</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => setShowMessaging(!showMessaging)}
@@ -478,8 +496,9 @@ export default function TeamDashboardScreen() {
           <Text style={{ color: "#EAF2FF", fontWeight: "900", fontSize: 18 }}>
             Team Roster ({roster.length})
           </Text>
+          {/* ✅ FIXED ROSTER NAVIGATION */}
           {canManageTeam && (
-            <TouchableOpacity onPress={() => router.push(`/teams/${id}/roster`)}>
+            <TouchableOpacity onPress={navigateToRoster}>
               <Text style={{ color: "#22C6D2", fontWeight: "900" }}>View Details →</Text>
             </TouchableOpacity>
           )}

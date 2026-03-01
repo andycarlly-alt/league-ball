@@ -1,10 +1,13 @@
-﻿// app/(tabs)/_layout.tsx - Complete Tabs Layout
+﻿// app/(tabs)/_layout.tsx - FINAL VERSION
 
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
     <Tabs
       screenOptions={{
@@ -15,8 +18,8 @@ export default function TabLayout() {
           backgroundColor: '#0A2238',
           borderTopColor: '#1A3A52',
           borderTopWidth: 1,
-          height: Platform.OS === 'ios' ? 88 : 60,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+          height: Platform.OS === 'ios' ? 60 + insets.bottom : 60,
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom : 8,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
@@ -28,87 +31,105 @@ export default function TabLayout() {
         },
       }}
     >
+      {/* HOME */}
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="🏠" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon icon="🏠" color={color} />,
         }}
       />
-      
+
+      {/* SOCIAL - NEW! */}
+      <Tabs.Screen
+        name="social"
+        options={{
+          title: 'Social',
+          tabBarIcon: ({ color }) => <TabIcon icon="💬" color={color} />,
+        }}
+      />
+
+      {/* MATCHES */}
       <Tabs.Screen
         name="matches"
         options={{
           title: 'Matches',
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="⚽" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon icon="⚽" color={color} />,
         }}
       />
-      
+
+      {/* TOURNAMENTS */}
       <Tabs.Screen
         name="tournaments"
         options={{
           title: 'Tournaments',
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="🏆" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon icon="🏆" color={color} />,
         }}
       />
-      
+
+      {/* TEAMS */}
       <Tabs.Screen
         name="teams"
         options={{
           title: 'Teams',
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="👥" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon icon="👥" color={color} />,
         }}
       />
 
+      {/* LIVE */}
       <Tabs.Screen
         name="live"
         options={{
           title: 'Live',
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="🔴" color={color} />
-          ),
+          tabBarIcon: ({ color }) => <TabIcon icon="🔴" color={color} />,
         }}
       />
 
+      {/* PROFILE (includes wallet access) */}
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color }) => <TabIcon icon="👤" color={color} />,
+        }}
+      />
+
+      {/* BILLING - Hidden from tab bar, accessible via Profile */}
       <Tabs.Screen
         name="billing"
         options={{
-          title: 'Wallet',
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="💰" color={color} />
-          ),
+          href: null, // This hides it from tab bar but keeps it accessible
         }}
       />
-      
+
+      {/* COMMUNITY HUB (Businesses) */}
       <Tabs.Screen
         name="messages"
         options={{
-          title: 'Messages',
-          tabBarIcon: ({ color }) => (
-            <TabIcon icon="💬" color={color} />
-          ),
+          title: 'Business',
+          tabBarIcon: ({ color }) => <TabIcon icon="🏪" color={color} />,
         }}
       />
     </Tabs>
   );
 }
 
-// Simple emoji icon component
 function TabIcon({ icon, color }: { icon: string; color: string }) {
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ 
-        fontSize: 22, 
-        opacity: color === '#F2D100' ? 1 : 0.6,
-      }}>
+    <View
+      style={{
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 24,
+        height: 24,
+      }}
+    >
+      <Text
+        style={{
+          fontSize: 20,
+          opacity: color === '#F2D100' ? 1 : 0.6,
+        }}
+      >
         {icon}
       </Text>
     </View>

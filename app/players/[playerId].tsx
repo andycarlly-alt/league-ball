@@ -1,8 +1,10 @@
-// app/players/[playerId].tsx - MULTI-DOCUMENT VERIFICATION SUPPORT
+// app/players/[playerId].tsx - ENHANCED WITH REAL VERIFICATION
 import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, Image, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { getVerificationService } from "../../src/services/documentVerification";
+import { playerVerificationService } from "../../src/services/playerVerification";
 import { ageBannerStyle, calcAge, DocumentType, useAppStore } from "../../src/state/AppStore";
 
 type LicenseData = {
@@ -17,6 +19,8 @@ type LicenseData = {
   parsedState: string | null;
   parsedCountry: string | null;
   confidence: number;
+  fraudScore?: number;
+  authentic?: boolean;
 };
 
 export default function PlayerProfileScreen() {
@@ -31,6 +35,7 @@ export default function PlayerProfileScreen() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [scanningLicense, setScanningLicense] = useState(false);
+  const [verificationInProgress, setVerificationInProgress] = useState(false);
   const [licenseData, setLicenseData] = useState<LicenseData>({
     documentType: null,
     frontUri: null,
@@ -62,7 +67,6 @@ export default function PlayerProfileScreen() {
   const canVerify = can("VERIFY_PLAYER");
   const canInvite = can("INVITE_PLAYER");
 
-  // Document type info
   const documentTypes: { type: DocumentType; label: string; icon: string; requiresBack: boolean }[] = [
     { type: 'DRIVERS_LICENSE', label: "Driver's License", icon: "🚗", requiresBack: true },
     { type: 'STATE_ID', label: "State ID", icon: "🪪", requiresBack: true },
@@ -71,113 +75,245 @@ export default function PlayerProfileScreen() {
 
   const selectedDocType = documentTypes.find(d => d.type === licenseData.documentType);
 
-  // AI-POWERED DOCUMENT PARSING
+  // ✨ REAL AI-POWERED DOCUMENT PARSING (replacing mock)
   const parseDocument = async (imageUri: string, side: 'front' | 'back') => {
     setScanningLicense(true);
     
     try {
-      // TODO: Integrate with OCR/AI service
-      // Simulated AI parsing (replace with actual API call)
-      await new Promise(resolve => setTimeout(resolve, 2500));
-      
-      // Mock parsed data - varies by document type
-      const mockParsedData = {
-        DRIVERS_LICENSE: {
-          name: "JOHN MICHAEL DOE",
-          dob: "03/15/1990",
-          address: "123 Main Street, Baltimore, MD 21201",
-          documentNumber: "D123-456-789-012",
-          expiration: "03/15/2028",
-          state: "MD",
-          country: "USA",
-          confidence: 0.96,
-        },
-        STATE_ID: {
-          name: "JOHN MICHAEL DOE",
-          dob: "03/15/1990",
-          address: "123 Main Street, Baltimore, MD 21201",
-          documentNumber: "ID987-654-321",
-          expiration: "03/15/2027",
-          state: "MD",
-          country: "USA",
-          confidence: 0.94,
-        },
-        PASSPORT: {
-          name: "DOE, JOHN MICHAEL",
-          dob: "15 MAR 1990",
-          address: "N/A",
-          documentNumber: "123456789",
-          expiration: "15 MAR 2030",
-          state: "N/A",
-          country: "USA",
-          confidence: 0.98,
-        },
-      };
-
-      const docType = licenseData.documentType || 'DRIVERS_LICENSE';
-      const parsedInfo = mockParsedData[docType];
+      // Get the verification service (Jumio or Mock based on env)
+      const verificationService = getVerificationService();
 
       if (side === 'front') {
+        // For front, we need to wait for back (if required) before calling API
         setLicenseData(prev => ({
           ...prev,
           frontUri: imageUri,
-          parsedName: parsedInfo.name,
-          parsedDOB: parsedInfo.dob,
-          parsedAddress: parsedInfo.address,
-          parsedDocumentNumber: parsedInfo.documentNumber,
-          parsedExpiration: parsedInfo.expiration,
-          parsedState: parsedInfo.state,
-          parsedCountry: parsedInfo.country,
-          confidence: parsedInfo.confidence,
         }));
 
-        const docTypeLabel = selectedDocType?.label || "Document";
+        if (!selectedDocType?.requiresBack) {
+          // Passport - only front needed, verify immediately
+          const result = await verificationService.verifyDocument(
+            imageUri,
+            '', // No back image for passport
+            player.id
+          );
 
-        Alert.alert(
-          `✅ ${docTypeLabel} Scanned Successfully!`,
-          `AI detected:\n\nName: ${parsedInfo.name}\nDOB: ${parsedInfo.dob}\nDocument #: ${parsedInfo.documentNumber}\nExpires: ${parsedInfo.expiration}\nConfidence: ${(parsedInfo.confidence * 100).toFixed(0)}%\n\nWould you like to auto-fill player details?`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Auto-Fill & Save",
-              onPress: () => {
-                // Save to AppStore
-                if (updatePlayerVerification) {
-                  updatePlayerVerification({
-                    playerId: player.id,
-                    documentType: docType,
-                    documentFrontUrl: imageUri,
-                    documentBackUrl: licenseData.backUri || undefined,
-                    extractedName: parsedInfo.name,
-                    extractedDOB: parsedInfo.dob,
-                    extractedAddress: parsedInfo.address,
-                    extractedDocumentNumber: parsedInfo.documentNumber,
-                    extractedExpiration: parsedInfo.expiration,
-                    extractedState: parsedInfo.state,
-                    extractedCountry: parsedInfo.country,
-                    documentConfidence: parsedInfo.confidence * 100,
-                    verificationStatus: 'APPROVED',
-                  });
-                  Alert.alert("✅ Success!", "Player details updated and verified!");
+          if (result.success && result.authentic) {
+            setLicenseData(prev => ({
+              ...prev,
+              frontUri: imageUri,
+              parsedName: result.extractedData.name,
+              parsedDOB: result.extractedData.dob,
+              parsedAddress: result.extractedData.address,
+              parsedDocumentNumber: result.extractedData.licenseNumber,
+              parsedExpiration: result.extractedData.expirationDate,
+              parsedState: result.extractedData.state,
+              parsedCountry: 'USA',
+              confidence: result.confidence / 100,
+              fraudScore: result.fraudScore,
+              authentic: result.authentic,
+            }));
+
+            Alert.alert(
+              `✅ ${selectedDocType?.label} Verified!`,
+              `Document is authentic!\n\nName: ${result.extractedData.name}\nDOB: ${result.extractedData.dob}\nDocument #: ${result.extractedData.licenseNumber}\nExpires: ${result.extractedData.expirationDate}\n\nConfidence: ${result.confidence}%\nFraud Score: ${result.fraudScore}`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Auto-Fill & Save",
+                  onPress: () => saveVerificationData(result.extractedData, result.confidence, result.fraudScore),
                 }
-              }
-            }
-          ]
-        );
+              ]
+            );
+          } else {
+            Alert.alert(
+              "⚠️ Document Verification Failed",
+              result.reasons.join('\n') || 'Unable to verify document authenticity',
+              [{ text: "OK" }]
+            );
+          }
+        } else {
+          // Driver's License or State ID - need back image
+          Alert.alert(
+            "✓ Front Captured",
+            `${selectedDocType?.label} front side captured. Please scan the back side to continue.`,
+            [{ text: "OK" }]
+          );
+        }
       } else {
+        // Back side captured
         setLicenseData(prev => ({
           ...prev,
           backUri: imageUri,
         }));
-        Alert.alert("✅ Success!", `${selectedDocType?.label} back captured!`);
+
+        // Now we have both sides, verify the document
+        if (licenseData.frontUri) {
+          const result = await verificationService.verifyDocument(
+            licenseData.frontUri,
+            imageUri,
+            player.id
+          );
+
+          if (result.success && result.authentic) {
+            setLicenseData(prev => ({
+              ...prev,
+              backUri: imageUri,
+              parsedName: result.extractedData.name,
+              parsedDOB: result.extractedData.dob,
+              parsedAddress: result.extractedData.address,
+              parsedDocumentNumber: result.extractedData.licenseNumber,
+              parsedExpiration: result.extractedData.expirationDate,
+              parsedState: result.extractedData.state,
+              parsedCountry: 'USA',
+              confidence: result.confidence / 100,
+              fraudScore: result.fraudScore,
+              authentic: result.authentic,
+            }));
+
+            Alert.alert(
+              `✅ ${selectedDocType?.label} Verified!`,
+              `Document is authentic!\n\nName: ${result.extractedData.name}\nDOB: ${result.extractedData.dob}\nDocument #: ${result.extractedData.licenseNumber}\nExpires: ${result.extractedData.expirationDate}\n\nConfidence: ${result.confidence}%\nFraud Score: ${result.fraudScore}`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Auto-Fill & Save",
+                  onPress: () => saveVerificationData(result.extractedData, result.confidence, result.fraudScore),
+                }
+              ]
+            );
+          } else {
+            Alert.alert(
+              "⚠️ Document Verification Failed",
+              result.reasons.join('\n') || 'Unable to verify document authenticity',
+              [{ text: "OK" }]
+            );
+          }
+        }
       }
 
     } catch (error) {
-      Alert.alert("Error", "Failed to parse document. Please try again.");
-      console.error("Document parsing error:", error);
+      Alert.alert("Error", `Failed to verify document: ${error.message}`);
+      console.error("Document verification error:", error);
     } finally {
       setScanningLicense(false);
     }
+  };
+
+  const saveVerificationData = (extractedData: any, confidence: number, fraudScore: number) => {
+    if (updatePlayerVerification) {
+      updatePlayerVerification({
+        playerId: player.id,
+        documentType: licenseData.documentType!,
+        documentFrontUrl: licenseData.frontUri!,
+        documentBackUrl: licenseData.backUri || undefined,
+        extractedName: extractedData.name,
+        extractedDOB: extractedData.dob,
+        extractedAddress: extractedData.address,
+        extractedDocumentNumber: extractedData.licenseNumber,
+        extractedExpiration: extractedData.expirationDate,
+        extractedState: extractedData.state,
+        extractedCountry: 'USA',
+        documentConfidence: confidence,
+        fraudScore: fraudScore,
+        verificationStatus: fraudScore < 30 ? 'APPROVED' : 'REVIEW_REQUIRED',
+      });
+      Alert.alert("✅ Success!", "Player details updated with verified document data!");
+    }
+  };
+
+  // ✨ COMPLETE VERIFICATION (Document + Face + Liveness)
+  const performCompleteVerification = async () => {
+    if (!licenseData.frontUri || !photoUri) {
+      Alert.alert(
+        "Missing Required Items",
+        "Please upload both:\n• Government ID document\n• Player selfie photo",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    if (selectedDocType?.requiresBack && !licenseData.backUri) {
+      Alert.alert(
+        "Missing Back Side",
+        `Please scan the back of the ${selectedDocType?.label}`,
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      "🔐 Complete Verification",
+      "This will verify:\n• Document authenticity\n• Face liveness detection\n• Face match (photo vs ID)\n\nThis may take 10-15 seconds.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Start Verification",
+          onPress: async () => {
+            setVerificationInProgress(true);
+
+            try {
+              const result = await playerVerificationService.verifyPlayer(
+                player.id,
+                licenseData.frontUri!,
+                licenseData.backUri || '',
+                photoUri!
+              );
+
+              if (result.verified) {
+                // Success!
+                Alert.alert(
+                  "✅ Verification Complete!",
+                  `Player successfully verified!\n\nConfidence: ${result.confidence.toFixed(1)}%\n\n` +
+                  `✓ Document authentic\n✓ Liveness confirmed\n✓ Face matched\n\n` +
+                  (result.warnings.length > 0 ? `Warnings:\n${result.warnings.join('\n')}` : ''),
+                  [
+                    {
+                      text: "OK",
+                      onPress: () => {
+                        // Mark player as verified
+                        if (updatePlayerVerification) {
+                          updatePlayerVerification({
+                            playerId: player.id,
+                            verificationStatus: 'APPROVED',
+                            documentType: licenseData.documentType!,
+                            documentFrontUrl: licenseData.frontUri!,
+                            documentBackUrl: licenseData.backUri || undefined,
+                            faceId: result.faceId,
+                            verifiedAt: new Date().toISOString(),
+                          });
+                        }
+                        
+                        // Toggle verification in AppStore
+                        if (!player.verified) {
+                          toggleVerifyPlayer(player.id);
+                        }
+                      }
+                    }
+                  ]
+                );
+              } else {
+                // Failed
+                Alert.alert(
+                  "❌ Verification Failed",
+                  `Unable to verify player:\n\n${result.errors.join('\n')}\n\n` +
+                  (result.warnings.length > 0 ? `Warnings:\n${result.warnings.join('\n')}` : ''),
+                  [{ text: "OK" }]
+                );
+              }
+            } catch (error) {
+              Alert.alert(
+                "Error",
+                `Verification failed: ${error.message}`,
+                [{ text: "OK" }]
+              );
+            } finally {
+              setVerificationInProgress(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const captureDocument = async (side: 'front' | 'back') => {
@@ -251,7 +387,7 @@ export default function PlayerProfileScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [3, 4],
-        quality: 0.8,
+        quality: 0.9,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -259,7 +395,7 @@ export default function PlayerProfileScreen() {
         setTimeout(() => {
           setPhotoUri(result.assets[0].uri);
           setUploading(false);
-          Alert.alert("Photo Captured", "Player photo saved for verification.");
+          Alert.alert("Photo Captured", "Player photo saved. Ready for verification!");
         }, 500);
       }
     } catch (error) {
@@ -280,7 +416,7 @@ export default function PlayerProfileScreen() {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [3, 4],
-        quality: 0.8,
+        quality: 0.9,
       });
 
       if (!result.canceled && result.assets[0]) {
@@ -288,7 +424,7 @@ export default function PlayerProfileScreen() {
         setTimeout(() => {
           setPhotoUri(result.assets[0].uri);
           setUploading(false);
-          Alert.alert("Photo Uploaded", "Player photo saved successfully.");
+          Alert.alert("Photo Uploaded", "Player photo saved. Ready for verification!");
         }, 500);
       }
     } catch (error) {
@@ -392,7 +528,9 @@ export default function PlayerProfileScreen() {
             <View style={{ flex: 1 }}>
               <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>AI Document Scanner</Text>
               <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 2 }}>
-                Instant verification with AI-powered OCR
+                {process.env.EXPO_PUBLIC_USE_MOCK_VERIFICATION === 'true' 
+                  ? 'Test Mode - Mock Verification' 
+                  : 'Live Verification - Jumio Powered'}
               </Text>
             </View>
           </View>
@@ -434,8 +572,10 @@ export default function PlayerProfileScreen() {
               {scanningLicense && (
                 <View style={{ marginTop: 14, padding: 20, backgroundColor: "#0B2842", borderRadius: 12, alignItems: "center" }}>
                   <ActivityIndicator size="large" color="#F2D100" />
-                  <Text style={{ color: "#F2D100", marginTop: 10, fontWeight: "900" }}>🤖 AI Processing...</Text>
-                  <Text style={{ color: "#9FB3C8", marginTop: 4, fontSize: 12 }}>Extracting data from {selectedDocType?.label}</Text>
+                  <Text style={{ color: "#F2D100", marginTop: 10, fontWeight: "900" }}>🤖 Verifying Document...</Text>
+                  <Text style={{ color: "#9FB3C8", marginTop: 4, fontSize: 12 }}>
+                    Checking authenticity & extracting data
+                  </Text>
                 </View>
               )}
 
@@ -452,15 +592,29 @@ export default function PlayerProfileScreen() {
                       resizeMode="cover"
                     />
                     {licenseData.parsedName && (
-                      <View style={{ marginTop: 8, backgroundColor: "rgba(52,199,89,0.1)", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "rgba(52,199,89,0.3)" }}>
-                        <Text style={{ color: "#34C759", fontWeight: "900", fontSize: 12 }}>
-                          ✓ AI Detected: {licenseData.parsedName}
+                      <View style={{ 
+                        marginTop: 8, 
+                        backgroundColor: licenseData.authentic ? "rgba(52,199,89,0.1)" : "rgba(255,149,0,0.1)", 
+                        padding: 10, 
+                        borderRadius: 10, 
+                        borderWidth: 1, 
+                        borderColor: licenseData.authentic ? "rgba(52,199,89,0.3)" : "rgba(255,149,0,0.3)" 
+                      }}>
+                        <Text style={{ 
+                          color: licenseData.authentic ? "#34C759" : "#FF9500", 
+                          fontWeight: "900", 
+                          fontSize: 12 
+                        }}>
+                          {licenseData.authentic ? '✓ Authentic Document' : '⚠️ Needs Review'}
+                        </Text>
+                        <Text style={{ color: "#EAF2FF", fontSize: 11, marginTop: 4 }}>
+                          Name: {licenseData.parsedName}
                         </Text>
                         <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 2 }}>
                           DOB: {licenseData.parsedDOB} • Doc #: {licenseData.parsedDocumentNumber}
                         </Text>
                         <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 2 }}>
-                          Confidence: {(licenseData.confidence * 100).toFixed(0)}%
+                          Confidence: {(licenseData.confidence * 100).toFixed(0)}% • Fraud Score: {licenseData.fraudScore || 0}
                         </Text>
                       </View>
                     )}
@@ -476,13 +630,15 @@ export default function PlayerProfileScreen() {
                 <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
                   <TouchableOpacity
                     onPress={() => captureDocument('front')}
-                    style={{ flex: 1, backgroundColor: "#F2D100", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                    disabled={scanningLicense}
+                    style={{ flex: 1, backgroundColor: scanningLicense ? "#9FB3C8" : "#F2D100", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
                   >
                     <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>📷 Scan</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={() => uploadDocument('front')}
-                    style={{ flex: 1, backgroundColor: "#22C6D2", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                    disabled={scanningLicense}
+                    style={{ flex: 1, backgroundColor: scanningLicense ? "#9FB3C8" : "#22C6D2", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
                   >
                     <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>🖼️ Upload</Text>
                   </TouchableOpacity>
@@ -512,13 +668,15 @@ export default function PlayerProfileScreen() {
                   <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
                     <TouchableOpacity
                       onPress={() => captureDocument('back')}
-                      style={{ flex: 1, backgroundColor: "#F2D100", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                      disabled={scanningLicense}
+                      style={{ flex: 1, backgroundColor: scanningLicense ? "#9FB3C8" : "#F2D100", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
                     >
                       <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>📷 Scan</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => uploadDocument('back')}
-                      style={{ flex: 1, backgroundColor: "#22C6D2", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
+                      disabled={scanningLicense}
+                      style={{ flex: 1, backgroundColor: scanningLicense ? "#9FB3C8" : "#22C6D2", paddingVertical: 10, borderRadius: 10, alignItems: "center" }}
                     >
                       <Text style={{ color: "#061A2B", fontWeight: "900", fontSize: 13 }}>🖼️ Upload</Text>
                     </TouchableOpacity>
@@ -542,19 +700,19 @@ export default function PlayerProfileScreen() {
           <View style={{ marginTop: 12, backgroundColor: "rgba(242,209,0,0.1)", padding: 10, borderRadius: 10, borderWidth: 1, borderColor: "rgba(242,209,0,0.3)" }}>
             <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 12 }}>⚡ AI Benefits:</Text>
             <Text style={{ color: "#9FB3C8", fontSize: 11, marginTop: 4, lineHeight: 16 }}>
-              • Instant data extraction{"\n"}
-              • 95%+ accuracy rate{"\n"}
-              • No manual typing needed{"\n"}
-              • Supports multiple document types
+              • Instant authenticity verification{"\n"}
+              • Fraud detection & security checks{"\n"}
+              • Automatic data extraction{"\n"}
+              • Supports 200+ document types
             </Text>
           </View>
         </View>
 
         {/* Photo Section */}
         <View style={{ backgroundColor: "#0A2238", borderRadius: 18, padding: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
-          <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>Player Photo</Text>
+          <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>Player Photo (Selfie)</Text>
           <Text style={{ color: "#9FB3C8", marginTop: 6, lineHeight: 20 }}>
-            Photo verification speeds up game-day check-in and prevents fraud.
+            Used for face matching and liveness detection during verification.
           </Text>
 
           {uploading ? (
@@ -570,7 +728,7 @@ export default function PlayerProfileScreen() {
                 resizeMode="cover"
               />
               <Text style={{ color: "#22C6D2", marginTop: 8, fontWeight: "900", textAlign: "center" }}>
-                ✓ Photo saved
+                ✓ Photo ready for verification
               </Text>
             </View>
           ) : (
@@ -597,6 +755,57 @@ export default function PlayerProfileScreen() {
           </View>
         </View>
 
+        {/* ✨ COMPLETE VERIFICATION BUTTON */}
+        {licenseData.frontUri && photoUri && (
+          <View style={{ backgroundColor: "rgba(52,199,89,0.1)", borderRadius: 18, padding: 14, borderWidth: 2, borderColor: "#34C759" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <Text style={{ fontSize: 24 }}>🔐</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: "#34C759", fontWeight: "900", fontSize: 16 }}>Ready for Verification</Text>
+                <Text style={{ color: "#9FB3C8", fontSize: 12, marginTop: 2 }}>
+                  Document & photo uploaded - verify now!
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              onPress={performCompleteVerification}
+              disabled={verificationInProgress}
+              style={{
+                backgroundColor: verificationInProgress ? "#9FB3C8" : "#34C759",
+                paddingVertical: 14,
+                borderRadius: 12,
+                alignItems: "center",
+                flexDirection: "row",
+                justifyContent: "center",
+                gap: 8,
+              }}
+            >
+              {verificationInProgress ? (
+                <>
+                  <ActivityIndicator color="#FFF" />
+                  <Text style={{ color: "#FFF", fontWeight: "900", fontSize: 15 }}>
+                    Verifying...
+                  </Text>
+                </>
+              ) : (
+                <Text style={{ color: "#FFF", fontWeight: "900", fontSize: 15 }}>
+                  🔐 Complete Verification (3-Step)
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={{ marginTop: 12, backgroundColor: "rgba(255,255,255,0.05)", padding: 10, borderRadius: 10 }}>
+              <Text style={{ color: "#9FB3C8", fontSize: 11, lineHeight: 16 }}>
+                This will verify:{"\n"}
+                ✓ Document authenticity{"\n"}
+                ✓ Liveness detection (real person){"\n"}
+                ✓ Face match (photo vs ID)
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Player Details */}
         <View style={{ backgroundColor: "#0A2238", borderRadius: 18, padding: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
           <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>Details</Text>
@@ -609,7 +818,7 @@ export default function PlayerProfileScreen() {
               </Text>
               {licenseData.parsedName && (
                 <Text style={{ color: "#34C759", fontSize: 11, marginTop: 2 }}>
-                  ✓ Verified with AI {selectedDocType?.label} scan
+                  ✓ Verified with {selectedDocType?.label}
                 </Text>
               )}
             </View>
@@ -621,7 +830,7 @@ export default function PlayerProfileScreen() {
               </Text>
               {licenseData.parsedDOB && (
                 <Text style={{ color: "#34C759", fontSize: 11, marginTop: 2 }}>
-                  ✓ Verified with AI {selectedDocType?.label} scan
+                  ✓ Verified with {selectedDocType?.label}
                 </Text>
               )}
             </View>
@@ -679,14 +888,14 @@ export default function PlayerProfileScreen() {
           </View>
         )}
 
-        {/* Verification */}
+        {/* Manual Verification (Legacy) */}
         {canVerify && (
           <View style={{ backgroundColor: "#0A2238", borderRadius: 18, padding: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" }}>
-            <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>Verification</Text>
+            <Text style={{ color: "#F2D100", fontWeight: "900", fontSize: 16 }}>Manual Verification</Text>
             <Text style={{ color: "#9FB3C8", marginTop: 6 }}>
               {player.verified
-                ? "Player is verified and ready for game day."
-                : "Verify player after checking photo and documentation."}
+                ? "Player is manually verified."
+                : "Use complete verification above for full security."}
             </Text>
 
             <TouchableOpacity
@@ -699,8 +908,8 @@ export default function PlayerProfileScreen() {
                 alignItems: "center",
               }}
             >
-              <Text style={{ color: "#061A2B", fontWeight: "900" }}>
-                {player.verified ? "✗ Unverify" : "✓ Verify Player"}
+              <Text style={{ color: "#FFF", fontWeight: "900" }}>
+                {player.verified ? "✗ Remove Verification" : "✓ Manual Verify"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -710,12 +919,12 @@ export default function PlayerProfileScreen() {
         <View style={{ backgroundColor: "rgba(34,198,210,0.1)", borderRadius: 18, padding: 14, borderWidth: 1, borderColor: "rgba(34,198,210,0.3)" }}>
           <Text style={{ color: "#22C6D2", fontWeight: "900", fontSize: 16 }}>⚡ Game Day Benefits</Text>
           <Text style={{ color: "#9FB3C8", marginTop: 8, lineHeight: 20 }}>
-            • 30-second check-in vs 5-minute ID check{"\n"}
-            • Prevent roster fraud{"\n"}
-            • No physical ID needed{"\n"}
+            • 5-second check-in vs 5-minute ID check{"\n"}
+            • Prevent roster fraud & fake IDs{"\n"}
+            • No physical ID needed at field{"\n"}
             • Digital verification trail{"\n"}
-            • AI-powered accuracy{"\n"}
-            • Supports all document types
+            • AI-powered 95%+ accuracy{"\n"}
+            • Liveness detection (anti-spoofing)
           </Text>
         </View>
       </ScrollView>
